@@ -6,9 +6,9 @@ config_ingredient = Ingredient("cfg")
 @config_ingredient.config
 def cfg():
     # Base configuration
-    model_config = {"musdb_path" : "/media/Datasets/musdb18/", # SET MUSDB PATH HERE, AND SET CCMIXTER PATH IN CCMixter.xml
-                    "noisy_VCTK_path" : "/media/Datasets/noisy_VCTK/",
-                    "estimates_path" : "/media/WaveUnet/Source_Estimates", # SET THIS PATH TO WHERE YOU WANT SOURCE ESTIMATES PRODUCED BY THE TRAINED MODEL TO BE SAVED. Folder itself must exist!
+    model_config = {"musdb_path" : "/data/storage/dio/Datasets/musdb18/", # SET MUSDB PATH HERE, AND SET CCMIXTER PATH IN CCMixter.xml
+                    "noisy_VCTK_path" : "/data/storage/dio/Datasets/noisy_VCTK/",
+                    "estimates_path" : "/data/storage/dio/Web-Unet/Source_Estimates", # SET THIS PATH TO WHERE YOU WANT SOURCE ESTIMATES PRODUCED BY THE TRAINED MODEL TO BE SAVED. Folder itself must exist!
                     "data_path" : "data", # Set this to where the preprocessed dataset should be saved
 
                     "model_base_dir" : "checkpoints", # Base folder for model checkpoints
@@ -81,8 +81,10 @@ def baseline_context():
 def nested_context():
     print("Train nested model with direct output and input context (valid convs.)")
     model_config = {
-        "output_type": "direct",
+        "network": "unet++",
+        "output_type": "difference",
         "context": True,
+        "mono_downmix": False,
         "deep_supervised": True,
     }
 
