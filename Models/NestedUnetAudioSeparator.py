@@ -232,14 +232,14 @@ class NestedUnetAudioSeparator:
                 # TODO
                 final_outputs.append(current_layer)
             
-             for i in range(self.num_layers - 1):
-                 if not self.deep_supervised:
-                     continue
-                 assert(final_outputs[i].get_shape().as_list()[1] > final_outputs[-1].get_shape().as_list()[1] or not self.context)
-                 print('    [unet++] {}th subnet final output shape: {}'.format(i, final_outputs[i].get_shape().as_list()))
-                 final_outputs[i] = Utils.crop(final_outputs[i],
-                                               final_outputs[-1].get_shape().as_list(),
-                                               match_feature_dim=False)
+            for i in range(self.num_layers - 1):
+                if not self.deep_supervised:
+                    continue
+                assert(final_outputs[i].get_shape().as_list()[1] > final_outputs[-1].get_shape().as_list()[1] or not self.context)
+                print('    [unet++] {}th subnet final output shape: {}'.format(i+1, final_outputs[i].get_shape().as_list()))
+                final_outputs[i] = Utils.crop(final_outputs[i],
+                                              final_outputs[-1].get_shape().as_list(),
+                                              match_feature_dim=False)
             print('    [unet++] Final output shape: {}'.format(final_outputs[-1]))
 
             # Output layer
