@@ -204,7 +204,7 @@ class NestedUnetAudioSeparator:
 
             for m in range(len(all_enc_outputs)):
                 for n in range(len(all_enc_outputs[m])):
-                    print('{}_{}: {}'.format(m,n,all_enc_outputs[m][n].get_shape().as_list()))
+                    print('   [unet++] {}_{}: {}'.format(m, n, all_enc_outputs[m][n].get_shape().as_list()))
 
             # Reconnect/concatenate the most swallow layer together to form the 
             # input of last conv
@@ -232,13 +232,15 @@ class NestedUnetAudioSeparator:
                 # TODO
                 final_outputs.append(current_layer)
             
-            # for i in range(self.num_layers - 1):
-            #     if self.deep_supervised:
-            #         continue
-            #     assert(final_outputs[i].get_shape().as_list()[1] > final_outputs[-1].get_shape().as_list()[1] or not self.context)
-            #     final_outputs[i] = Utils.crop(final_outputs[i],
-            #                                   final_outputs[-1].get_shape().as_list(),
-            #                                   match_feature_dim=False)
+             for i in range(self.num_layers - 1):
+                 if not self.deep_supervised:
+                     continue
+                 assert(final_outputs[i].get_shape().as_list()[1] > final_outputs[-1].get_shape().as_list()[1] or not self.context)
+                 print('    [unet++] {}th subnet final output shape: {}'.format(i, final_outputs[i].get_shape().as_list()))
+                 final_outputs[i] = Utils.crop(final_outputs[i],
+                                               final_outputs[-1].get_shape().as_list(),
+                                               match_feature_dim=False)
+            print('    [unet++] Final output shape: {}'.format(final_outputs[-1]))
 
             # Output layer
             # Determine output activation function
@@ -252,24 +254,25 @@ class NestedUnetAudioSeparator:
 
             if self.output_type == "direct":
                 if self.deep_supervised:
-                    return 
-                else:
                     return [Models.OutputLayer.independent_outputs(final_outputs[i],
                                                                    self.source_names,
                                                                    self.num_channels, 
                                                                    self.output_filter_size,
                                                                    self.padding, 
                                                                    out_activation) for i in range(self.num_layers)]
+                else:
+                    return Models.OutputLayer.independent_outputs(final_outputs[-1],
+                                                                  self.source_names,
+                                                                  self.num_channels,
+                                                                  self.output_filter_size,
+                                                                  self.padding,
+                                                                  out_activation)
             elif self.output_type == "difference":
-                cropped_inputs = list()
-                for i in range(self.num_layers):
-                    if not self.deep_supervised and i!=0:
-                        continue
-                    cropped_input = Utils.crop(input,
-                                               final_outputs[i].get_shape().as_list(), 
-                                               match_feature_dim=False)
-                    cropped_inputs.append(cropped_input)
+                cropped_input = Utils.crop(input,
+                                           final_outputs[-1].get_shape().as_list(), 
+                                           match_feature_dim=False)
                 if self.deep_supervised:
+                    cropped_inputs = [cropped_input] * self.num_layers
                     return [Models.OutputLayer.difference_output(cropped_inputs[i], 
                                                                  final_outputs[i], 
                                                                  self.source_names, 
@@ -279,8 +282,8 @@ class NestedUnetAudioSeparator:
                                                                  out_activation, 
                                                                  training) for i in range(self.num_layers)]
                 else:
-                    return Models.OutputLayer.difference_output(cropped_inputs[i],
-                                                                final_outputs[i],
+                    return Models.OutputLayer.difference_output(cropped_input,
+                                                                final_outputs[-1],
                                                                 self.source_names,
                                                                 self.num_channels,
                                                                 self.output_filter_size,
