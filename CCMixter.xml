@@ -1,6 +1,6 @@
 <database>
   <databaseName>CCMixter</databaseName>
-  <databaseFolderPath>/media/Datasets/ccmixter_corpus</databaseFolderPath>
+  <databaseFolderPath>/data/storage/dio/Datasets/ccmixter_corpus</databaseFolderPath>
   <trackList>
     <track>
       <title>To_Be_Sensitive_(with_mindmapthat)</title>
