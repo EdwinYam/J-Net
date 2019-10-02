@@ -6,16 +6,16 @@ config_ingredient = Ingredient("cfg")
 @config_ingredient.config
 def cfg():
     # Base configuration
-    model_config = {"musdb_path" : "/media/Datasets/musdb18/", # SET MUSDB PATH HERE, AND SET CCMIXTER PATH IN CCMixter.xml
-                    "noisy_VCTK_path" : "/media/Datasets/noisy_VCTK/",
-                    "estimates_path" : "/media/WaveUnet/Source_Estimates", # SET THIS PATH TO WHERE YOU WANT SOURCE ESTIMATES PRODUCED BY THE TRAINED MODEL TO BE SAVED. Folder itself must exist!
+    model_config = {"musdb_path" : "/data/storage/dio/Datasets/musdb18/", # SET MUSDB PATH HERE, AND SET CCMIXTER PATH IN CCMixter.xml
+                    "noisy_VCTK_path" : "/data/storage/dio/Datasets/noisy_VCTK/",
+                    "estimates_path" : "/data/storage/dio/Web-Unet/Source_Estimates", # SET THIS PATH TO WHERE YOU WANT SOURCE ESTIMATES PRODUCED BY THE TRAINED MODEL TO BE SAVED. Folder itself must exist!
                     "data_path" : "data", # Set this to where the preprocessed dataset should be saved
 
                     "model_base_dir" : "checkpoints", # Base folder for model checkpoints
                     "log_dir" : "logs", # Base folder for logs files
                     "batch_size" : 16, # Batch size
                     "init_sup_sep_lr" : 1e-4, # Supervised separator learning rate
-                    "epoch_it" : 2000, # Number of supervised separator steps per epoch
+                    "epoch_it" : 10, # Number of supervised separator steps per epoch
                     'cache_size': 4000, # Number of audio snippets buffered in the random shuffle queue. Larger is better, since workers put multiple examples of one song into this queue. The number of different songs that is sampled from with each batch equals cache_size / num_snippets_per_track. Set as high as your RAM allows.
                     'num_workers' : 6, # Number of processes used for each TF map operation used when loading the dataset
                     "num_snippets_per_track" : 100, # Number of snippets that should be extracted from each song at a time after loading it. Higher values make data loading faster, but can reduce the batches song diversity
@@ -37,7 +37,7 @@ def cfg():
                     'task' : 'voice', # Type of separation task. 'voice' : Separate music into voice and accompaniment. 'multi_instrument': Separate music into guitar, bass, vocals, drums and other (Sisec)
                     'augmentation' : True, # Random attenuation of source signals to improve generalisation performance (data augmentation)
                     'raw_audio_loss' : True, # Only active for unet_spectrogram network. True: L2 loss on audio. False: L1 loss on spectrogram magnitudes for training and validation and test loss
-                    'worse_epochs' : 10, # Patience for early stoppping on validation set
+                    'worse_epochs' : 1, # Patience for early stoppping on validation set
                     'deep_supervised': False, # Whether to use nested arch.
                     'experiment_id': ''
                     }
@@ -72,7 +72,7 @@ def baseline_diff():
 def baseline_context():
     print("Training baseline model with difference output and input context (valid convolutions)")
     model_config = {
-        "output_type" : "difference",
+        "output_type" : "direct",
         "context" : True
     }
 
@@ -82,7 +82,7 @@ def nested_context():
     print("Train nested model with direct output and input context (valid convs.)")
     model_config = {
         "network": "unet++",
-        "output_type": "direct",
+        "output_type": "difference",
         "context": True,
         "mono_downmix": False,
         "deep_supervised": True,
@@ -92,7 +92,7 @@ def nested_context():
 def baseline_stereo():
     print("Training baseline model with difference output and input context (valid convolutions) and stereo input/output")
     model_config = {
-        "output_type" : "difference",
+        "output_type" : "direct",
         "context" : True,
         "mono_downmix" : False
     }
