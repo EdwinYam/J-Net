@@ -140,8 +140,10 @@ def get_dataset(model_config, input_shape, output_shape, partition):
         
         if model_config["task"] == "denoise":
             print("Preparing Noisy_VCTK dataset!")
-            nvctk_train = getNoisyVCTK('trainset_28spk_wav')
-            nvctk_test = getNoisyVCTK('testset_wav')
+            nvctk_train = getNoisyVCTK('trainset_28spk_wav',
+                                       root_path=model_config["noisy_VCTK_path"])
+            nvctk_test = getNoisyVCTK('testset_wav',
+                                      root_path=model_config["noisy_VCTK_path"])
             dataset["train"].extend(nvctk_train[:int(len(nvctk_train)*0.8)])
             dataset["valid"].extend(nvctk_train[int(len(nvctk_train)*0.8):])
             dataset["test"].extend(nvctk_test)

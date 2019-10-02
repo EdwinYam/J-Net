@@ -4,4 +4,4 @@ checkpoints
 data
 logs
 __pycache__
-
+.Config.py

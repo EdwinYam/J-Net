@@ -43,7 +43,7 @@ def test(model_config, partition, model_folder, load_model):
     # BUILD MODELS
     # Separator
     separator_sources = separator_func(batch["mix"], False, 
-                                       model_config["raw_audio_loss"], 
+                                       not model_config["raw_audio_loss"], 
                                        reuse=False)  
     # Sources are output in order [acc, voice] for voice separation, 
     # [bass, drums, other, vocals] for multi-instrument separation
