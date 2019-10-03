@@ -143,6 +143,8 @@ def predict_track(model_config, sess, mix_audio, mix_sr, sep_input_shape, sep_ou
         # source_shape = [1, freq_bins, acc_mag_part.shape[2], num_chan]
         if model_config["deep_supervised"]:
             source_parts = source_parts[-1]
+            if model_config["evaluate_subnet"]:
+                source_parts = source_parts[model_config["sub_layer_num"]-1]
         for name in model_config["source_names"]:
             source_preds[name][source_pos:source_pos + output_time_frames] = source_parts[name][0, :, :]
 
