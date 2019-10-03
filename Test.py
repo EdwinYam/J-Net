@@ -77,7 +77,7 @@ def test(model_config, partition, model_folder, load_model):
     for key in model_config["source_names"]:
         real_source = batch[key]
         # sep_source = separator_sources[-1][key]
-        sep_source = separator_sources[key][-1] if model_config["deep_supervised"] else separator_sources[key]
+        sep_source = separator_sources[-1][key] if model_config["deep_supervised"] else separator_sources[key]
 
         if model_config["network"] == "unet_spectrogram" and not model_config["raw_audio_loss"]:
             window = functools.partial(hann_window, periodic=True)
