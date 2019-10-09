@@ -135,8 +135,7 @@ def train(model_config, experiment_id, load_model=None):
     config.gpu_options.allow_growth=True
     sess = tf.Session(config=config)
     sess.run(tf.global_variables_initializer())
-    writer = tf.compat.v1.summary.FileWriter(model_config["log_dir"] + os.path.sep + model_config["experiment_id"] + os.path.sep + str(experiment_id),
-                                   graph=sess.graph)
+    writer = tf.compat.v1.summary.FileWriter(os.path.join(model_config["log_dir"], model_config["experiment_id"]), graph=sess.graph)
 
     # CHECKPOINTING
     # Load pretrained model to continue training, if we are supposed to
@@ -166,7 +165,7 @@ def train(model_config, experiment_id, load_model=None):
 
     # Epoch finished - Save model
     print("Finished epoch!")
-    save_path = saver.save(sess, model_config["model_base_dir"] + os.path.sep + model_config["experiment_id"] + os.path.sep + str(experiment_id), global_step=int(_global_step))
+    save_path = saver.save(sess, os.path.join(model_config["model_base_dir"], model_config["experiment_id"]), global_step=int(_global_step))
 
     # Close session, clear computational graph
     writer.flush()
@@ -185,7 +184,7 @@ def optimise(model_config, experiment_id, model_path=None):
         worse_epochs = 0
         if i>=1:
             print("Finished first round of training, now entering fine-tuning stage")
-            if i==2:
+            if i==3:
                 model_config["batch_size"] *= 2
             model_config["init_sup_sep_lr"] /= 10
         while worse_epochs < model_config["worse_epochs"]: 
@@ -222,7 +221,8 @@ def run(cfg):
         if not os.path.exists(dir):
             os.makedirs(dir)
 
-    model_path = "./checkpoints/unet++_10_deep_supervised/243137-88000"
+    #model_path = "./checkpoints/unet++_10_deep_supervised/243137-88000"
+    model_path = None
     # Optimize in a supervised fashion until validation loss worsens
     sup_model_path, sup_loss = optimise(model_path=model_path)
     print("Supervised training finished! Saved model at " + sup_model_path + ". Performance: " + str(sup_loss))

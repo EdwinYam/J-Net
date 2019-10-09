@@ -55,7 +55,7 @@ def write_records(sample_list, model_config, input_shape, output_shape, records_
     recovery_sample_dict = dict()
     if model_config["recovery_augmented"]:
         for source in model_config["source_names"]:
-            recovery_sample[source] = [ random.randint(0, len(sample_list)-1) for i in range(int(len(sample_list)*model_config["augment_ratio"])) ]
+            recovery_sample_dict[source] = [ random.randint(0, len(sample_list)-1) for i in range(int(len(sample_list)*model_config["augment_ratio"])) ]
     # Go through songs and write them to TFRecords
     all_keys = model_config["source_names"] + ["mix"]
     for index, sample in enumerate(sample_list):
