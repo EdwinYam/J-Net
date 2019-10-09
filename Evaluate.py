@@ -142,9 +142,10 @@ def predict_track(model_config, sess, mix_audio, mix_sr, sep_input_shape, sep_ou
         # Save predictions
         # source_shape = [1, freq_bins, acc_mag_part.shape[2], num_chan]
         if model_config["deep_supervised"]:
-            source_parts = source_parts[-1]
-            if model_config["evaluate_subnet"]:
-                source_parts = source_parts[model_config["sub_layer_num"]-1]
+            if not model_config["evaluate_subnet"]:
+                source_parts = source_parts[-1]
+            else:
+                source_parts = source_parts[model_config["sub_num_layers"]-1]
         for name in model_config["source_names"]:
             source_preds[name][source_pos:source_pos + output_time_frames] = source_parts[name][0, :, :]
 
@@ -154,7 +155,7 @@ def predict_track(model_config, sess, mix_audio, mix_sr, sep_input_shape, sep_ou
 
     return source_preds
 
-def produce_musdb_source_estimates(model_config, load_model, musdb_path, output_path, subsets=None):
+def produce_musdb_source_estimates(model_config, load_model, musdb_path, output_path, subsets='test'):
     '''
     Predicts source estimates for MUSDB for a given model checkpoint and configuration, and evaluate them.
     :param model_config: Model configuration of the model to be evaluated
@@ -222,7 +223,7 @@ def compute_mean_metrics(json_folder, compute_averages=True, metric="SDR"):
         #print(path)
         if path.__contains__("test.json"):
             print("Found test JSON, skipping...")
-            continue
+            #continue
 
         with open(path, "r") as f:
             js = json.load(f)

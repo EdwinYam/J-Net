@@ -177,17 +177,16 @@ def train(model_config, experiment_id, load_model=None):
     return save_path
 
 @config_ingredient.capture
-def optimise(model_config, experiment_id):
+def optimise(model_config, experiment_id, model_path=None):
     epoch = 0
     best_loss = 10000
-    model_path = None
     best_model_path = None
-    for i in range(2):
+    for i in range(3):
         worse_epochs = 0
-        if i==1:
+        if i>=1:
             print("Finished first round of training, now entering fine-tuning stage")
             model_config["batch_size"] *= 2
-            model_config["init_sup_sep_lr"] = 1e-5
+            model_config["init_sup_sep_lr"] /= 5
         while worse_epochs < model_config["worse_epochs"]: 
             # Early stopping on validation set after a few epochs
             print("EPOCH: " + str(epoch))
@@ -222,8 +221,9 @@ def run(cfg):
         if not os.path.exists(dir):
             os.makedirs(dir)
 
+    model_path = "./checkpoints/unet++_10_deep_supervised/243137-88000"
     # Optimize in a supervised fashion until validation loss worsens
-    sup_model_path, sup_loss = optimise()
+    sup_model_path, sup_loss = optimise(model_path=model_path)
     print("Supervised training finished! Saved model at " + sup_model_path + ". Performance: " + str(sup_loss))
 
     # Evaluate trained model on MUSDB
