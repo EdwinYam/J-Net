@@ -40,7 +40,7 @@ def _int64_feature(value):
   """Returns an int64_list from a bool / enum / int / uint."""
   return tf.train.Feature(int64_list=tf.train.Int64List(value=[value]))
 
-def write_records(sample_list, model_config, input_shape, output_shape, records_path):
+def write_records(sample_list, model_config, input_shape, output_shape, records_path, partition):
     # Writes samples in the given list as TFrecords into a given path, using the current model config and in/output shapes
 
     # Compute padding
@@ -52,10 +52,14 @@ def write_records(sample_list, model_config, input_shape, output_shape, records_
     num_writers = 1
     writers = [tf.python_io.TFRecordWriter(records_path + str(i) + ".tfrecords") for i in range(num_writers)]
 
+    recovery_sample_dict = dict()
+    if model_config["recovery_augmented"]:
+        for source in model_config["source_names"]:
+            recovery_sample[source] = [ random.randint(0, len(sample_list)-1) for i in range(int(len(sample_list)*model_config["augment_ratio"])) ]
     # Go through songs and write them to TFRecords
     all_keys = model_config["source_names"] + ["mix"]
-    for sample in sample_list:
-        print("Reading song")
+    for index, sample in enumerate(sample_list):
+        print("Reading song {}".format(sample))
         try:
             audio_tracks = dict()
 
@@ -88,6 +92,21 @@ def write_records(sample_list, model_config, input_shape, output_shape, records_
         feature["channels"] = _int64_feature(channels)
         sample = tf.train.Example(features=tf.train.Features(feature=feature))
         writers[np.random.randint(0, num_writers)].write(sample.SerializeToString())
+
+        for source in model_config["source_names"]:
+            if model_config["recovery_augmented"] and index in recovery_sample_dict[source]:
+                print("[Records] Augment clean source pairs for pure recovery training")
+                _audio_tracks = {key: np.zeros((length,channels)) for key in all_keys}
+                _audio_tracks["mix"] = audio_tracks[source]
+                _audio_tracks[source] = audio_tracks[source]
+                
+                # Write to TFrecords the flattened version
+                feature = {key: _floats_feature(_audio_tracks[key]) for key in all_keys}
+                feature["length"] = _int64_feature(length)
+                feature["channels"] = _int64_feature(channels)
+                sample = tf.train.Example(features=tf.train.Features(feature=feature))
+                writers[np.random.randint(0, num_writers)].write(sample.SerializeToString())
+            
 
     for writer in writers:
         writer.close()
@@ -129,6 +148,10 @@ def get_dataset(model_config, input_shape, output_shape, partition):
     dataset_name = "task_" + model_config["task"] + "_" + \
                    "sr_" + str(model_config["expected_sr"]) + "_" + \
                    "mono_" + str(model_config["mono_downmix"])
+    
+    if model_config["recovery_augmented"]:
+        dataset_name = dataset_name + "_" + "recovery_augmented"
+
     main_folder = os.path.join(model_config["data_path"], dataset_name)
 
     if not os.path.exists(main_folder):
@@ -195,7 +218,7 @@ def get_dataset(model_config, input_shape, output_shape, partition):
                 train_filename = os.path.join(partition_folder, str(core) + "_")  # address to save the TFRecords file
                 sample_list_subset = sample_list[core * part_entries:min((core + 1) * part_entries, len(sample_list))]
                 proc = Process(target=write_records,
-                               args=(sample_list_subset, model_config, input_shape, output_shape, train_filename))
+                               args=(sample_list_subset, model_config, input_shape, output_shape, train_filename, curr_partition))
                 proc.start()
                 processes.append(proc)
             for p in processes:
