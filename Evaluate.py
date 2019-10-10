@@ -70,23 +70,32 @@ def predict(track, model_config, load_model, results_dir=None):
     # resample back to the exact number of samples in the original input (with 
     # fractional orig_sr/new_sr this causes issues otherwise) 
     pred_audio = None
-    if model_config["evaluate_subnet"]:
+    if model_config["evaluate_subnet"] and model_config[""]:
         # We want to evaluate the quality of the output from subnet
         pred_audio = list()
-        for i in range():
-            pred_audio = {name : Utils.resample(separator_preds[name], model_config["expected_sr"], orig_sr)[:mix_audio.shape[0],:] for name in model_config["source_names"]}    
+        for index in range(0, model_config["num_layers"]-model_config["min_sub_num_layers"]):
+            pred_audio.append({name : Utils.resample(separator_preds[index][name], model_config["expected_sr"], orig_sr)[:mix_audio.shape[0],:] for name in model_config["source_names"]})
+
+            if model_config["mono_downmix"] and mix_channels > 1: 
+                pred_audio[index] = {name : np.tile(pred_audio[index][name], [1, mix_channels]) for name in list(pred_audio[index].keys())}
+
+            if results_dir is not None:
+                scores = museval.eval_mus_track(track, pred_audio[index], output_dir=os.path.join(results_dir, str(index+1+model_config["min_sub_num_layers"])))
+                # print nicely formatted mean scores
+                print(scores)
     else:       
         pred_audio = {name : Utils.resample(separator_preds[name], model_config["expected_sr"], orig_sr)[:mix_audio.shape[0],:] for name in model_config["source_names"]}
 
-    if model_config["mono_downmix"] and mix_channels > 1: # Convert to multichannel if mixture input was multichannel by duplicating mono estimate
-        pred_audio = {name : np.tile(pred_audio[name], [1, mix_channels]) for name in list(pred_audio.keys())}
+        if model_config["mono_downmix"] and mix_channels > 1: 
+            # Convert to multichannel if mixture input was multichannel by 
+            # duplicating mono estimate
+            pred_audio = {name : np.tile(pred_audio[name], [1, mix_channels]) for name in list(pred_audio.keys())}
 
-    # Evaluate using museval, if we are currently evaluating MUSDB
-    if results_dir is not None:
-        scores = museval.eval_mus_track(track, pred_audio, output_dir=results_dir)
-
-        # print nicely formatted mean scores
-        print(scores)
+        # Evaluate using museval, if we are currently evaluating MUSDB
+        if results_dir is not None:
+            scores = museval.eval_mus_track(track, pred_audio, output_dir=results_dir)
+            # print nicely formatted mean scores
+            print(scores)
 
     # Close session, clear computational graph
     sess.close()
@@ -128,8 +137,8 @@ def predict_track(model_config, sess, mix_audio, mix_sr, sep_input_shape, sep_ou
     # Preallocate source predictions (same shape as input mixture)
     source_time_frames = mix_audio.shape[0]
     source_preds = None
-    if model_config["evaluate_subnet"]:
-        source_preds = [{name : np.zeros(mix_audio.shape, np.float32) for name in model_config["source_names"]} for _ in range()]
+    if model_config["evaluate_subnet"] and model_config["sub_num_layers"] == None:
+        source_preds = [{name : np.zeros(mix_audio.shape, np.float32) for name in model_config["source_names"]} for _ in range(model_config["min_sub_num_layers"], model_config["num_layers"])]
     else:
         source_preds = {name : np.zeros(mix_audio.shape, np.float32) for name in model_config["source_names"]}
 
@@ -155,17 +164,32 @@ def predict_track(model_config, sess, mix_audio, mix_sr, sep_input_shape, sep_ou
         # Save predictions
         # source_shape = [1, freq_bins, acc_mag_part.shape[2], num_chan]
         if model_config["deep_supervised"]:
-            if not model_config["evaluate_subnet"]:
+            if not model_config["evaluate_subnet"]
                 source_parts = source_parts[-1]
-            else:
+            elif model_config["sub_num_layers"] != None: 
                 source_parts = source_parts[model_config["sub_num_layers"]-1]
-        for name in model_config["source_names"]:
-            source_preds[name][source_pos:source_pos + output_time_frames] = source_parts[name][0, :, :]
+            else:
+                source_parts = source_parts
+        
+        if model_config["evaluate_subnet"] and model_config["sub_num_layers"] == None:
+            for index in range(model_config["min_sub_num_layers"], model_config["num_layers"]):
+                for name in model_config["source_names"]:
+                    source_preds[index][name][source_pos:source_pos + output_time_frames] = source_parts[index][name][0, :, :]
+        else:
+            for name in model_config["source_names"]:
+                source_preds[name][source_pos:source_pos + output_time_frames] = source_parts[name][0, :, :]
 
-    # In case we had to pad the mixture at the end, remove those samples from source prediction now
-    if extra_pad > 0:
-        source_preds = {name : source_preds[name][:-extra_pad,:] for name in list(source_preds.keys())}
+    # In case we had to pad the mixture at the end, remove those samples from 
+    # source prediction now
+    if model_config["evaluate_subnet"] and model_config["sub_num_layers"] == None:
+        if extra_pad > 0:
+            for index in range(0, model_config["num_layers"]-model_config["min_sub_num_layers"]):
+                source_preds[index] = {name : source_preds[index][name][:-extra_pad,:] for name in list(source_preds[index].keys())}
+    else:
+        if extra_pad > 0:
+            source_preds = {name : source_preds[name][:-extra_pad,:] for name in list(source_preds.keys())}
 
+    # source_preds: either a list or only one instance
     return source_preds
 
 def produce_musdb_source_estimates(model_config, load_model, musdb_path, output_path, subsets='test'):

@@ -180,13 +180,15 @@ def optimise(model_config, experiment_id, model_path=None):
     epoch = 0
     best_loss = 10000
     best_model_path = None
+    curr_lr = model_config["init_sup_sep_lr"]
     for i in range(3):
         worse_epochs = 0
         if i>=1:
             print("Finished first round of training, now entering fine-tuning stage")
             if i==3:
                 model_config["batch_size"] *= 2
-            model_config["init_sup_sep_lr"] /= 10
+            model_config["init_sup_sep_lr"] = curr_lr
+        curr_lr /= 10
         while worse_epochs < model_config["worse_epochs"]: 
             # Early stopping on validation set after a few epochs
             print("EPOCH: " + str(epoch))

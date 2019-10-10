@@ -56,7 +56,7 @@ def test(model_config, partition, model_folder, load_model):
     # Start session and queue input threads
     sess = tf.Session()
     sess.run(tf.global_variables_initializer())
-    writer = tf.summary.FileWriter(model_config["log_dir"] + os.path.sep +  model_folder, graph=sess.graph)
+    writer = tf.summary.FileWriter(os.path.join(model_config["log_dir"], model_folder), graph=sess.graph)
 
     # CHECKPOINTING
     # Load pretrained model to test
