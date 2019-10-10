@@ -94,7 +94,7 @@ def write_records(sample_list, model_config, input_shape, output_shape, records_
         writers[np.random.randint(0, num_writers)].write(sample.SerializeToString())
 
         for source in model_config["source_names"]:
-            if model_config["recovery_augmented"] and index in recovery_sample_dict[source]:
+            if partition == "train" and model_config["recovery_augmented"] and index in recovery_sample_dict[source]:
                 print("[Records] Augment clean source pairs for pure recovery training")
                 _audio_tracks = {key: np.zeros((length,channels)) for key in all_keys}
                 _audio_tracks["mix"] = audio_tracks[source]
