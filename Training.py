@@ -131,7 +131,7 @@ def train(model_config, experiment_id, load_model=None):
     sup_summaries = tf.compat.v1.summary.merge_all(key='sup')
 
     # Start session and queue input threads
-    config = tf.ConfigProto(device_count={'GPU':2})
+    config = tf.ConfigProto(device_count={'GPU':1})
     config.gpu_options.allow_growth=True
     sess = tf.Session(config=config)
     sess.run(tf.global_variables_initializer())
