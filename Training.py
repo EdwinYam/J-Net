@@ -165,7 +165,7 @@ def train(model_config, experiment_id, load_model=None):
 
     # Epoch finished - Save model
     print("Finished epoch!")
-    save_path = saver.save(sess, os.path.join(model_config["model_base_dir"], model_config["experiment_id"], experiment_id), global_step=int(_global_step))
+    save_path = saver.save(sess, os.path.join(model_config["model_base_dir"], model_config["experiment_id"], str(experiment_id)), global_step=int(_global_step))
 
     # Close session, clear computational graph
     writer.flush()
