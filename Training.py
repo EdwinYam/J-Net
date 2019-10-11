@@ -92,7 +92,7 @@ def train(model_config, experiment_id, load_model=None):
             real_mag = tf.abs(stfts)
             sub_separator_loss = 0
             if model_config["deep_supervised"]:
-                for i in range(model_config["num_layers"]):
+                for i in range(model_config["min_sub_num_layers"], model_config["num_layers"]):
                     sub_separator_loss += tf.reduce_mean(tf.abs(real_mag - sep_source[i][key]))
                 sub_separator_loss /= float(model_config["num_layers"])
                 separator_loss += sub_separator_loss
@@ -101,7 +101,7 @@ def train(model_config, experiment_id, load_model=None):
         else:
             sub_separator_loss = 0
             if model_config["deep_supervised"]:
-                for i in range(model_config["num_layers"]):
+                for i in range(model_config["min_sub_num_layers"], model_config["num_layers"]):
                     sub_separator_loss += tf.reduce_mean(tf.square(real_source - sep_source[i][key]))
                 separator_loss += sub_separator_loss / float(model_config["num_layers"])
             else:
