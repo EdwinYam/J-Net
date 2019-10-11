@@ -164,7 +164,7 @@ def predict_track(model_config, sess, mix_audio, mix_sr, sep_input_shape, sep_ou
         # Save predictions
         # source_shape = [1, freq_bins, acc_mag_part.shape[2], num_chan]
         if model_config["deep_supervised"]:
-            if not model_config["evaluate_subnet"]
+            if not model_config["evaluate_subnet"]:
                 source_parts = source_parts[-1]
             elif model_config["sub_num_layers"] != None: 
                 source_parts = source_parts[model_config["sub_num_layers"]-1]
