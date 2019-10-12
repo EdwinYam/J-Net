@@ -388,8 +388,8 @@ class DB(object):
                 if isinstance(user_results, dict):
                     self._save_estimates(user_results, track, estimates_dir)
                 elif isinstance(user_results, list):
-                    for user_result in user_results:
-                        self._save_estimates(user_result, track, estimates_dir)
+                    for index, user_result in enumerate(user_results):
+                        self._save_estimates(user_result, track, os.path.join(estimates_dir, str(index))))
 
     def run(
         self,

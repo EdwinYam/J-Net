@@ -70,10 +70,12 @@ def predict(track, model_config, load_model, results_dir=None):
     # resample back to the exact number of samples in the original input (with 
     # fractional orig_sr/new_sr this causes issues otherwise) 
     pred_audio = None
-    if model_config["evaluate_subnet"] and model_config[""]:
+    if model_config["evaluate_subnet"] and model_config["sub_num_layers"] == None:
+        assert(model_config["deep_supervised"])
         # We want to evaluate the quality of the output from subnet
         pred_audio = list()
-        for index in range(0, model_config["num_layers"]-model_config["min_sub_num_layers"]):
+        assert(model_config["num_layers"]-model_config["min_sub_num_layers"]+1 == len(separator_preds))
+        for index in range(0, model_config["num_layers"]-model_config["min_sub_num_layers"] + 1):
             pred_audio.append({name : Utils.resample(separator_preds[index][name], model_config["expected_sr"], orig_sr)[:mix_audio.shape[0],:] for name in model_config["source_names"]})
 
             if model_config["mono_downmix"] and mix_channels > 1: 
@@ -138,7 +140,7 @@ def predict_track(model_config, sess, mix_audio, mix_sr, sep_input_shape, sep_ou
     source_time_frames = mix_audio.shape[0]
     source_preds = None
     if model_config["evaluate_subnet"] and model_config["sub_num_layers"] == None:
-        source_preds = [{name : np.zeros(mix_audio.shape, np.float32) for name in model_config["source_names"]} for _ in range(model_config["min_sub_num_layers"], model_config["num_layers"])]
+        source_preds = [{name : np.zeros(mix_audio.shape, np.float32) for name in model_config["source_names"]} for _ in range(model_config["min_sub_num_layers"], model_config["num_layers"] + 1)]
     else:
         source_preds = {name : np.zeros(mix_audio.shape, np.float32) for name in model_config["source_names"]}
 
@@ -172,9 +174,14 @@ def predict_track(model_config, sess, mix_audio, mix_sr, sep_input_shape, sep_ou
                 source_parts = source_parts
         
         if model_config["evaluate_subnet"] and model_config["sub_num_layers"] == None:
-            for index in range(model_config["min_sub_num_layers"], model_config["num_layers"]):
+            assert(model_config["deep_supervised"])
+            for index in range(model_config["min_sub_num_layers"], model_config["num_layers"] + 1):
                 for name in model_config["source_names"]:
-                    source_preds[index][name][source_pos:source_pos + output_time_frames] = source_parts[index][name][0, :, :]
+                    if index == model_config["num_layers"]:
+                        source_sum = [ source_parts[i][name] for i in range(model_config["min_sub_num_layers"], model_config["num_layers"]) ]
+                        source_preds[index-model_config["min_sub_num_layers"]][name][source_pos:source_pos + output_time_frames] = tf.reduce_mean(tf.stack(source_sum), axis=0)[0, :, :]
+                    else:
+                        source_preds[index-model_config["min_sub_num_layers"]][name][source_pos:source_pos + output_time_frames] = source_parts[index][name][0, :, :]
         else:
             for name in model_config["source_names"]:
                 source_preds[name][source_pos:source_pos + output_time_frames] = source_parts[name][0, :, :]
@@ -183,7 +190,7 @@ def predict_track(model_config, sess, mix_audio, mix_sr, sep_input_shape, sep_ou
     # source prediction now
     if model_config["evaluate_subnet"] and model_config["sub_num_layers"] == None:
         if extra_pad > 0:
-            for index in range(0, model_config["num_layers"]-model_config["min_sub_num_layers"]):
+            for index in range(0, model_config["num_layers"]-model_config["min_sub_num_layers"] + 1):
                 source_preds[index] = {name : source_preds[index][name][:-extra_pad,:] for name in list(source_preds[index].keys())}
     else:
         if extra_pad > 0:

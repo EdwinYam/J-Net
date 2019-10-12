@@ -224,10 +224,11 @@ def run(cfg):
             os.makedirs(dir)
 
     #model_path = "./checkpoints/unet++_10_deep_supervised/243137-88000"
-    model_path = None
+    #model_path = None
+    sup_model_path = "./checkpoints/unet++_12_normal-599740/599740-110000"
     # Optimize in a supervised fashion until validation loss worsens
-    sup_model_path, sup_loss = optimise(model_path=model_path)
-    print("Supervised training finished! Saved model at " + sup_model_path + ". Performance: " + str(sup_loss))
+    #sup_model_path, sup_loss = optimise(model_path=model_path)
+    #print("Supervised training finished! Saved model at " + sup_model_path + ". Performance: " + str(sup_loss))
 
     # Evaluate trained model on MUSDB
     # TODO
