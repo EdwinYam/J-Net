@@ -150,8 +150,7 @@ class UnetAudioSeparator:
                                                  activation=LeakyReLU,
                                                  padding=self.padding)  # out = in - filter + 1
 
-            if not self.residual:
-                current_layer = Utils.crop_and_concat(input, current_layer, match_feature_dim=False)
+            current_layer = Utils.crop_and_concat(input, current_layer, match_feature_dim=False)
 
             # Output layer
             # Determine output activation function
