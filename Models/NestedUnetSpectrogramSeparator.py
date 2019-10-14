@@ -5,8 +5,8 @@ import functools
 from tensorflow.contrib.signal import hann_window
 
 '''Alias settings'''
-tf.variable_scope = tf.compat.v1.variable_scope
-tf.image.resize_bilinear = tf.compat.v1.image.resize_bilinear
+#tf.variable_scope = tf.compat.v1.variable_scope
+#tf.image.resize_bilinear = tf.compat.v1.image.resize_bilinear
 
 class NestedUnetSpectrogramSeparator:
     '''

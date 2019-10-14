@@ -204,47 +204,47 @@ def train(model_config, experiment_id, load_model=None):
     # update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
     # with tf.control_dependencies(update_ops):
     with tf.variable_scope("separator_solver"):
-        separator_solver = tf.compat.v1.train.AdamOptimizer(learning_rate=model_config["init_sup_sep_lr"]).minimize(separator_loss, var_list=separator_vars)
+        separator_solver = tf.train.AdamOptimizer(learning_rate=model_config["init_sup_sep_lr"]).minimize(separator_loss, var_list=separator_vars)
     d_solver = None
     g_solver = None
     if model_config["discriminated"]:
         with tf.variable_scope("d_solver"):
             # Use RMSprop ?
-            d_solver = tf.compat.v1.train.AdamOptimizer(learning_rate=model_config["d_init_sup_sep_lr"]).minimize(d_loss, var_list=d_vars)
+            d_solver = tf.train.AdamOptimizer(learning_rate=model_config["d_init_sup_sep_lr"]).minimize(d_loss, var_list=d_vars)
         with tf.variable_scope("g_solver"):
-            g_solver = tf.compat.v1.train.AdamOptimizer(learning_rate=model_config["g_init_sup_sep_lr"]).minimize(g_adv_loss, var_list=g_vars)
+            g_solver = tf.train.AdamOptimizer(learning_rate=model_config["g_init_sup_sep_lr"]).minimize(g_adv_loss, var_list=g_vars)
 
 
     # SUMMARIES
     if model_config["discriminated"]:
-        tf.compat.v1.summary.scalar("g_adv_loss", g_adv_loss, collections=["gen", "unsup"])
-        tf.compat.v1.summary.scalar("d_rl_loss", d_rl_loss, collections=["disc", "unsup"])
-        tf.compat.v1.summary.scalar("d_fk_loss", d_fk_loss, collections=["disc", "unsup"])
-    tf.compat.v1.summary.scalar("sep_loss", separator_loss, collections=["sup"])
-    sup_summaries = tf.compat.v1.summary.merge_all(key='sup')
+        tf.summary.scalar("g_adv_loss", g_adv_loss, collections=["gen", "unsup"])
+        tf.summary.scalar("d_rl_loss", d_rl_loss, collections=["disc", "unsup"])
+        tf.summary.scalar("d_fk_loss", d_fk_loss, collections=["disc", "unsup"])
+    tf.summary.scalar("sep_loss", separator_loss, collections=["sup"])
+    sup_summaries = tf.summary.merge_all(key='sup')
     
-    disc_summaries = tf.compat.v1.summary.merge_all(key='disc') if model_config["discriminated"] else None
-    gen_summaries = tf.compat.v1.summary.merge_all(key='gen') if model_config["discriminated"] else None
+    disc_summaries = tf.summary.merge_all(key='disc') if model_config["discriminated"] else None
+    gen_summaries = tf.summary.merge_all(key='gen') if model_config["discriminated"] else None
 
     # Start session and queue input threads
     config = tf.ConfigProto(device_count={'GPU':1})
     config.gpu_options.allow_growth=True
     sess = tf.Session(config=config)
     sess.run(tf.global_variables_initializer())
-    writer = tf.compat.v1.summary.FileWriter(os.path.join(model_config["log_dir"], model_config["experiment_id"]),
+    writer = tf.summary.FileWriter(os.path.join(model_config["log_dir"], model_config["experiment_id"]),
                                    graph=sess.graph)
 
     # CHECKPOINTING
     # Load pretrained model to continue training, if we are supposed to
     if load_model != None:
-        restorer = tf.compat.v1.train.Saver(tf.global_variables(), 
-                                  write_version=tf.compat.v1.train.SaverDef.V2)
+        restorer = tf.train.Saver(tf.global_variables(), 
+                                  write_version=tf.train.SaverDef.V2)
         print("Num of variables: " + str(len(tf.global_variables())))
         restorer.restore(sess, load_model)
         print('Pre-trained model restored from file ' + load_model)
 
-    saver = tf.compat.v1.train.Saver(tf.global_variables(),
-                                     write_version=tf.compat.v1.train.SaverDef.V2)
+    saver = tf.train.Saver(tf.global_variables(),
+                                     write_version=tf.train.SaverDef.V2)
 
     if not model_config["discriminated"]:
         # Start training loop
