@@ -15,7 +15,10 @@ import musdb
 
 def take_random_snippets(sample, keys, input_shape, num_samples):
     # Take a sample (collection of audio files) and extract snippets from it at a number of random positions
-    start_pos = tf.random_uniform([num_samples], 0, maxval=sample["length"] - input_shape[0], dtype=tf.int64)
+    try:
+        start_pos = tf.random.uniform([num_samples], 0, maxval=sample["length"] - input_shape[0], dtype=tf.int64)
+    except:
+        start_pos = tf.random_uniform([num_samples], 0, maxval=sample["length"] - input_shape[0], dtype=tf.int64)
     return take_snippets_at_pos(sample, keys, start_pos, input_shape, num_samples)
 
 def take_all_snippets(sample, keys, input_shape, output_shape):
@@ -97,11 +100,16 @@ def parse_record(example_proto, source_names, shape):
 
     all_names = source_names + ["mix"]
 
-    features = {key : tf.FixedLenSequenceFeature([], allow_missing=True, dtype=tf.float32) for key in all_names}
-    features["length"] = tf.FixedLenFeature([], tf.int64)
-    features["channels"] = tf.FixedLenFeature([], tf.int64)
-
-    parsed_features = tf.parse_single_example(example_proto, features)
+    try:
+        features = {key : tf.io.FixedLenSequenceFeature([], allow_missing=True, dtype=tf.float32) for key in all_names}
+        features["length"] = tf.io.FixedLenFeature([], tf.int64)
+        features["channels"] = tf.io.FixedLenFeature([], tf.int64)
+        parsed_features = tf.io.parse_single_example(example_proto, features)
+    except:
+        features = {key : tf.FixedLenSequenceFeature([], allow_missing=True, dtype=tf.float32) for key in all_names}
+        features["length"] = tf.FixedLenFeature([], tf.int64)
+        features["channels"] = tf.FixedLenFeature([], tf.int64)
+        parsed_features = tf.parse_single_example(example_proto, features)
 
     # Reshape
     length = tf.cast(parsed_features["length"], tf.int64)

@@ -33,7 +33,10 @@ def random_amplify(sample):
     '''
     for key, val in list(sample.items()):
         if key != "mix":
-            sample[key] = tf.random_uniform([], 0.7, 1.0) * val
+            try:
+                sample[key] = tf.random.uniform([], 0.7, 1.0) * val
+            except:
+                sample[key] = tf.random_uniform([], 0.7, 1.0) * val
 
     sample["mix"] = tf.add_n([val for key, val in list(sample.items()) if key != "mix"])
     return sample
