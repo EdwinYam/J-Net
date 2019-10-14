@@ -105,7 +105,7 @@ class NestedUnetAudioSeparator:
             output_shape = input_shape
             return input_shape, output_shape
 
-    def get_output(self, input, training, return_spectrogram=False, reuse=True):
+    def get_output(self, input, training, return_spectrogram=False, reuse=True, use_discriminator=False):
         '''
         Creates symbolic computation graph of the U-Net for a given input batch
         :param input: Input batch of mixtures, 3D tensor 
@@ -145,6 +145,9 @@ class NestedUnetAudioSeparator:
             # decimation
             enc_outputs.append(current_layer)
             assert(len(enc_outputs) == self.num_layers + 1)
+            if use_discriminator:
+                return enc_outputs
+
             current_layer_up = current_layer
 
             # Feature map here shall be X along one dimension
