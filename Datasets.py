@@ -57,8 +57,8 @@ def write_records(sample_list, model_config, input_shape, output_shape, records_
 
     # Go through songs and write them to TFRecords
     all_keys = model_config["source_names"] + ["mix"]
-    for sample in sample_list:
-        print("Reading song")
+    for index, sample in enumerate(sample_list):
+        print("Reading {}-th song".format(index))
         try:
             audio_tracks = dict()
 
