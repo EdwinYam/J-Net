@@ -45,6 +45,7 @@ class NestedUnetAudioSeparator:
         self.num_channels = 1 if model_config["mono_downmix"] else 2
         self.output_activation = model_config["output_activation"] # tf.tanh
         self.deep_supervised = model_config["deep_supervised"]
+        self.min_sub_num_layers = model_config["min_sub_num_layers"]
 
     def get_padding(self, shape):
         '''
@@ -209,7 +210,7 @@ class NestedUnetAudioSeparator:
             # Reconnect/concatenate the most swallow layer together to form the 
             # input of last conv
             final_outputs = list()
-            for i in range(1,self.num_layers+1):
+            for i in range(self.min_sub_num_layers+1, self.num_layers+1):
                 if (not self.deep_supervised and i != self.num_layers):
                      continue
                 current_layer = all_enc_outputs[i][0]
@@ -232,7 +233,9 @@ class NestedUnetAudioSeparator:
                 # TODO
                 final_outputs.append(current_layer)
             
-            for i in range(self.num_layers - 1):
+            if self.deep_supervised:
+                assert(len(final_outputs) == self.num_layers-self.min_sub_num_layers)
+            for i in range(len(final_outputs) - 1):
                 if not self.deep_supervised:
                     continue
                 assert(final_outputs[i].get_shape().as_list()[1] > final_outputs[-1].get_shape().as_list()[1] or not self.context)
@@ -259,7 +262,7 @@ class NestedUnetAudioSeparator:
                                                                    self.num_channels, 
                                                                    self.output_filter_size,
                                                                    self.padding, 
-                                                                   out_activation) for i in range(self.num_layers)]
+                                                                   out_activation) for i in range(self.num_layers-self.min_sub_num_layers)]
                 else:
                     return Models.OutputLayer.independent_outputs(final_outputs[-1],
                                                                   self.source_names,
@@ -280,7 +283,7 @@ class NestedUnetAudioSeparator:
                                                                  self.output_filter_size, 
                                                                  self.padding, 
                                                                  out_activation, 
-                                                                 training) for i in range(self.num_layers)]
+                                                                 training) for i in range(self.num_layers-self.min_sub_num_layers)]
                 else:
                     return Models.OutputLayer.difference_output(cropped_input,
                                                                 final_outputs[-1],

@@ -77,7 +77,8 @@ def train(model_config, experiment_id, load_model=None):
                 batch[name] = tf.zeros_like(_batch[name])
             else:
                 batch[name] = _batch[name]
-
+    else:
+        batch = _batch
     print("Training...")
 
     # BUILD MODELS
