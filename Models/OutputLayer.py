@@ -2,7 +2,7 @@ import tensorflow as tf
 
 import Utils
 
-def independent_outputs(featuremap, source_names, num_channels, filter_width, padding, activation):
+def independent_outputs(featuremap, source_names, num_channels, filter_width, padding, activation, input_mix, residual):
     outputs = dict()
     for name in source_names:
         outputs[name] = tf.layers.conv1d(featuremap, 
@@ -10,6 +10,9 @@ def independent_outputs(featuremap, source_names, num_channels, filter_width, pa
                                          filter_width, 
                                          activation=activation, 
                                          padding=padding)
+        if residual:
+            outputs[name] = Utils.crop(input_mix, outputs[name].get_shape().as_list()) + outputs[name]
+    
     return outputs
 
 def difference_output(input_mix, featuremap, source_names, num_channels, filter_width, padding, activation, training):

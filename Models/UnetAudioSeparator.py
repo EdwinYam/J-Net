@@ -41,6 +41,9 @@ class UnetAudioSeparator:
         self.source_names = model_config["source_names"]
         self.num_channels = 1 if model_config["mono_downmix"] else 2
         self.output_activation = model_config["output_activation"]
+        self.downsample_trainable = not model_config["frozen_downsample"]
+        self.min_skip_num_layers = model_config["min_skip_num_layers"]
+        self.residual = model_config["residual"]
 
     def get_padding(self, shape):
         '''
@@ -93,7 +96,7 @@ class UnetAudioSeparator:
         else:
             return [shape[0], shape[1], self.num_channels], [shape[0], shape[1], self.num_channels]
 
-    def get_output(self, input, training, return_spectrogram=False, reuse=True):
+    def get_output(self, input, training, return_spectrogram=False, reuse=True, use_discriminator=False):
         '''
         Creates symbolic computation graph of the U-Net for a given input batch
         :param input: Input batch of mixtures, 3D tensor [batch_size, num_samples, num_channels]
@@ -106,12 +109,17 @@ class UnetAudioSeparator:
 
             # Down-convolution: Repeat strided conv
             for i in range(self.num_layers):
-                current_layer = tf.layers.conv1d(current_layer, self.num_initial_filters + (self.num_increase_filters * i), self.filter_size, strides=1, activation=LeakyReLU, padding=self.padding) # out = in - filter + 1
+                current_layer = tf.layers.conv1d(current_layer, self.num_initial_filters + (self.num_increase_filters * i), self.filter_size, strides=1, activation=LeakyReLU, padding=self.padding, name='downconv_{}'.format(i), trainable=self.downsample_trainable) # out = in - filter + 1
                 enc_outputs.append(current_layer)
-                print("    [unet] down_conv{} shape: {}".format(i+1, enc_outputs[i].get_shape().as_list()))
+                print("    [unet] downconv{} shape: {}".format(i+1, enc_outputs[i].get_shape().as_list()))
                 current_layer = current_layer[:,::2,:] # Decimate by factor of 2 # out = (in-1)/2 + 1
 
-            current_layer = tf.layers.conv1d(current_layer, self.num_initial_filters + (self.num_increase_filters * self.num_layers),self.filter_size,activation=LeakyReLU,padding=self.padding) # One more conv here since we need to compute features after last decimation
+            current_layer = tf.layers.conv1d(current_layer, self.num_initial_filters + (self.num_increase_filters * self.num_layers),self.filter_size,activation=LeakyReLU,padding=self.padding, name='downconv_{}'.format(self.num_layers)) # One more conv here since we need to compute features after last decimation
+
+            if use_discriminator:
+                enc_outputs.append(current_layer)
+                print("    [unet] downconv{} shape: {}".format(self.num_layers+1, enc_outputs[self.num_layers].get_shape().as_list()))
+                return enc_outputs
 
             # Feature map here shall be X along one dimension
 
@@ -131,16 +139,19 @@ class UnetAudioSeparator:
                 # UPSAMPLING FINISHED
 
                 assert(enc_outputs[-i-1].get_shape().as_list()[1] == current_layer.get_shape().as_list()[1] or self.context) #No cropping should be necessary unless we are using context
-                current_layer = Utils.crop_and_concat(enc_outputs[-i-1], current_layer, match_feature_dim=False)
-                print("    [unet] up_conv{} shape: {}".format(self.num_layers-i, current_layer.get_shape().as_list()))
+                if (self.num_layers - i > self.min_skip_num_layers) and not self.downsample_trainable:
+                    current_layer = Utils.crop_and_concat(enc_outputs[-i-1], current_layer, match_feature_dim=False)
+                print("    [unet] upconv_{} shape: {}".format(self.num_layers-i, current_layer.get_shape().as_list()))
 
                 current_layer = tf.layers.conv1d(current_layer, 
                                                  self.num_initial_filters + (self.num_increase_filters * (self.num_layers - i - 1)), 
                                                  self.merge_filter_size,
+                                                 name="upconv_{}".format(self.num_layers-i),
                                                  activation=LeakyReLU,
                                                  padding=self.padding)  # out = in - filter + 1
 
-            current_layer = Utils.crop_and_concat(input, current_layer, match_feature_dim=False)
+            if not self.residual:
+                current_layer = Utils.crop_and_concat(input, current_layer, match_feature_dim=False)
 
             # Output layer
             # Determine output activation function
@@ -152,8 +163,9 @@ class UnetAudioSeparator:
                 raise NotImplementedError
 
             if self.output_type == "direct":
-                return Models.OutputLayer.independent_outputs(current_layer, self.source_names, self.num_channels, self.output_filter_size, self.padding, out_activation)
+                return Models.OutputLayer.independent_outputs(current_layer, self.source_names, self.num_channels, self.output_filter_size, self.padding, out_activation, input, residual=self.residual)
             elif self.output_type == "difference":
+                assert(not self.residual)
                 cropped_input = Utils.crop(input,current_layer.get_shape().as_list(), match_feature_dim=False)
                 return Models.OutputLayer.difference_output(cropped_input, current_layer, self.source_names, self.num_channels, self.output_filter_size, self.padding, out_activation, training)
             else:

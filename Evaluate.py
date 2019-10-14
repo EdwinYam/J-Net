@@ -154,7 +154,7 @@ def predict_track(model_config, sess, mix_audio, mix_sr, sep_input_shape, sep_ou
 
     return source_preds
 
-def produce_musdb_source_estimates(model_config, load_model, musdb_path, output_path, subsets=None):
+def produce_musdb_source_estimates(model_config, load_model, musdb_path, output_path, subsets='test'):
     '''
     Predicts source estimates for MUSDB for a given model checkpoint and configuration, and evaluate them.
     :param model_config: Model configuration of the model to be evaluated

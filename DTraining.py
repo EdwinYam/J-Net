@@ -13,6 +13,7 @@ import Models.UnetSpectrogramSeparator
 import Models.UnetAudioSeparator
 import Models.NestedUnetSpectrogramSeparator
 import Models.NestedUnetAudioSeparator
+import Models.Discriminator
 import Test
 import Evaluate
 
@@ -58,6 +59,12 @@ def train(model_config, experiment_id, load_model=None):
     sep_input_shape, sep_output_shape = separator_class.get_padding(np.array(disc_input_shape))
     separator_func = separator_class.get_output
     discriminator_func = partial(separator_func, use_discriminator=True)
+   
+    tail_discriminators, tail_discriminators_func = dict(), dict()
+    if model_config["discriminated"]:
+        assert(not model_config["context"])
+        tail_discriminators = { name: Models.Discriminator.Nested_Discriminator(model_config, name) for name in model_config["source_names"] }
+        tail_discriminators_func = { name: tail_discriminators[name].get_output for name in model_config["source_names"] }
 
     # TODO: Add noisy_VCTK datasets for training
     # Placeholders and input normalisation
@@ -69,7 +76,8 @@ def train(model_config, experiment_id, load_model=None):
     iterator = dataset.make_one_shot_iterator()
     _batch = iterator.get_next()
     batch = dict()
-    if model_config["random_recovery"] and random.uniform(0,1) > 0.3:
+    recover_source = model_config["random_recovery"] and random.uniform(0,1) > 0.3
+    if recover_source:
         chosen_source = model_config["source_names"][random.randint(0,model_config["num_sources"]-1)]
         batch["mix"] = _batch[chosen_source]
         for name in model_config["source_names"]:
@@ -77,6 +85,8 @@ def train(model_config, experiment_id, load_model=None):
                 batch[name] = tf.zeros_like(_batch[name])
             else:
                 batch[name] = _batch[name]
+    else:
+        batch = _batch
 
     print("Training...")
 
@@ -87,12 +97,19 @@ def train(model_config, experiment_id, load_model=None):
     separator_sources = separator_func(batch["mix"], True, 
                                        not model_config["raw_audio_loss"], 
                                        reuse=False)
+    
+    assert((model_config["semi_supervised"] and not model_config["context"]) or not model_config["semi_supervised"])
 
     # Supervised objective: MSE for raw audio, MAE for magnitude space (Jansson U-Net)
     separator_loss = 0.0
-    for key in model_config["source_names"]:
+    d_loss = 0.0
+    d_rl_loss = 0.0
+    d_fk_loss = 0.0
+    g_adv_loss = 0.0
+    for index, key in enumerate(model_config["source_names"]):
         real_source = batch[key]
         sep_source = separator_sources
+        re_sep_source = separator_func(separator_sources[key], True, not model_config["raw_audio_loss"], reuse=True) if model_config["semi_supervised"] else None
         # sep_source = separator_sources[key]
 
         if model_config["network"] == "unet_spectrogram" and not model_config["raw_audio_loss"]:
@@ -107,20 +124,42 @@ def train(model_config, experiment_id, load_model=None):
             if model_config["deep_supervised"]:
                 for i in range(model_config["min_sub_num_layers"], model_config["num_layers"]):
                     sub_separator_loss += tf.reduce_mean(tf.abs(real_mag - sep_source[i][key]))
+                    if model_config["semi_supervised"]:
+                        sub_separator_loss += model_config["semi_loss_ratio"] * tf.reduce_mean(tf.abs(real_mag-re_sep_source[i][key]))
                 sub_separator_loss /= float(model_config["num_layers"])
                 separator_loss += sub_separator_loss
             else:
                 separator_loss += tf.reduce_mean(tf.abs(real_mag - sep_source[key])) 
+                if model_config["semi_supervised"]:
+                    separator_loss += model_config["semi_loss_ratio"] * tf.reduce_mean(tf.abs(real_mag-re_sep_source[key]))
         else:
-            sub_separator_loss = 0
+            sub_separator_loss = 0.0
             if model_config["deep_supervised"]:
                 for i in range(model_config["min_sub_num_layers"], model_config["num_layers"]):
                     sub_separator_loss += tf.reduce_mean(tf.square(real_source - sep_source[i][key]))
+                    if model_config["semi_supervised"]:
+                        sub_separator_loss += tf.reduce_mean(tf.square(real_source - re_sep_source[i][key]))
                 separator_loss += sub_separator_loss / float(model_config["num_layers"])
             else:
                 separator_loss += tf.reduce_mean(tf.square(real_source - sep_source[key])) 
+                if model_config["semi_supervised"]:
+                    separator_loss += tf.reduce_mean(tf.square(real_source - re_sep_source[key]))
+            if model_config["discriminated"]:
+                d_rl_embeddings = discriminator_func(batch[key], True, not model_config["raw_audio_loss"], reuse=True)
+                d_rl_logits = tail_discriminators_func[key](d_rl_embeddings, True, reuse=False)
+                d_rl_loss += tf.reduce_mean(tf.squared_difference(d_rl_logits, 1.))
+                
+                d_fk_embeddings = discriminator_func(sep_source[key], True, not model_config["raw_audio_loss"], reuse=True)
+                d_fk_logits = tail_discriminators_func[key](d_fk_embeddings, True, reuse=True)
+                d_fk_loss += tf.reduce_mean(tf.squared_difference(d_fk_logits, 0.))
+
+                g_adv_loss += tf.reduce_mean(tf.squared_difference(d_fk_logits, 1.))
+
     # Normalise by number of sources 
     separator_loss = separator_loss / float(model_config["num_sources"]) 
+    if model_config["discriminated"]:
+        g_adv_loss = model_config["g_loss_weight"] * g_adv_loss / float(model_config["num_sources"])
+        d_loss = (d_rl_loss + d_fk_loss) / float(model_config["num_sources"])
 
     # TRAINING CONTROL VARIABLES
     global_step = tf.get_variable('global_step', [], 
@@ -128,21 +167,64 @@ def train(model_config, experiment_id, load_model=None):
                                   trainable=False, 
                                   dtype=tf.int64)
     increment_global_step = tf.assign(global_step, global_step + 1)
+    
+    g_global_step = tf.get_variable('g_global_step', [],
+                                    initializer=tf.constant_initializer(0),
+                                    trainable=False,
+                                    dtype=tf.int64)
+    increment_g_global_step = tf.assign(g_global_step, g_global_step + 1)
+
+    d_global_step = tf.get_variable('d_global_step', [],
+                                    initializer=tf.constant_initializer(0),
+                                    trainable=False,
+                                    dtype=tf.int64)
+    increment_d_global_step = tf.assign(d_global_step, d_global_step + 1)
 
     # Set up optimizers
     separator_vars = Utils.getTrainableVariables("separator")
     print("Sep_Vars: " + str(Utils.getNumParams(separator_vars)))
     print("Num of variables: " + str(len(tf.global_variables())))
-    
+   
+    d_vars = list()
+    g_vars = list()
+    if model_config["discriminated"]:
+        t_vars = tf.trainable_variables()
+        for var in t_vars:
+            if "discriminator" in var.name:
+                d_vars.append(var)
+            elif ("downconv" not in var.name) and ("separator" in var.name):
+                g_vars.append(var)
+        for x in d_vars:
+            assert x not in g_vars
+        for x in g_vars:
+            assert x not in d_vars
+        print("    [*] Number of Trainable discriminator variables: {}".format(Utils.getNumParams(d_vars)))
+        print("    [*] Number of Trainable generator variables: {}".format(Utils.getNumParams(g_vars)))
 
-    update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
-    with tf.control_dependencies(update_ops):
-        with tf.variable_scope("separator_solver"):
-            separator_solver = tf.compat.v1.train.AdamOptimizer(learning_rate=model_config["init_sup_sep_lr"]).minimize(separator_loss, var_list=separator_vars)
+    # update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
+    # with tf.control_dependencies(update_ops):
+    with tf.variable_scope("separator_solver"):
+        separator_solver = tf.compat.v1.train.AdamOptimizer(learning_rate=model_config["init_sup_sep_lr"]).minimize(separator_loss, var_list=separator_vars)
+    d_solver = None
+    g_solver = None
+    if model_config["discriminated"]:
+        with tf.variable_scope("d_solver"):
+            # Use RMSprop ?
+            d_solver = tf.compat.v1.train.AdamOptimizer(learning_rate=model_config["d_init_sup_sep_lr"]).minimize(d_loss, var_list=d_vars)
+        with tf.variable_scope("g_solver"):
+            g_solver = tf.compat.v1.train.AdamOptimizer(learning_rate=model_config["g_init_sup_sep_lr"]).minimize(g_adv_loss, var_list=g_vars)
+
 
     # SUMMARIES
+    if model_config["discriminated"]:
+        tf.compat.v1.summary.scalar("g_adv_loss", g_adv_loss, collections=["gen", "unsup"])
+        tf.compat.v1.summary.scalar("d_rl_loss", d_rl_loss, collections=["disc", "unsup"])
+        tf.compat.v1.summary.scalar("d_fk_loss", d_fk_loss, collections=["disc", "unsup"])
     tf.compat.v1.summary.scalar("sep_loss", separator_loss, collections=["sup"])
     sup_summaries = tf.compat.v1.summary.merge_all(key='sup')
+    
+    disc_summaries = tf.compat.v1.summary.merge_all(key='disc') if model_config["discriminated"] else None
+    gen_summaries = tf.compat.v1.summary.merge_all(key='gen') if model_config["discriminated"] else None
 
     # Start session and queue input threads
     config = tf.ConfigProto(device_count={'GPU':1})
@@ -164,19 +246,46 @@ def train(model_config, experiment_id, load_model=None):
     saver = tf.compat.v1.train.Saver(tf.global_variables(),
                                      write_version=tf.compat.v1.train.SaverDef.V2)
 
-    # Start training loop
-    _global_step = sess.run(global_step)
-    _init_step = _global_step
-    for _ in range(model_config["epoch_it"]):
-        # TRAIN SEPARATOR
-        _, _sup_summaries = sess.run([separator_solver, sup_summaries])
-        writer.add_summary(_sup_summaries, global_step=_global_step)
-        if _global_step % 100 == 0:
-            print('    [{}] Current step: {}'.format(model_config["network"], _global_step))
+    if not model_config["discriminated"]:
+        # Start training loop
+        _global_step = sess.run(global_step)
+        _init_step = _global_step
+        for _ in range(model_config["epoch_it"]):
+            # TRAIN SEPARATOR
+            _, _sup_summaries = sess.run([separator_solver, sup_summaries])
+            writer.add_summary(_sup_summaries, global_step=_global_step)
+            if _global_step % 100 == 0:
+                print('    [{}] Current step: {}'.format(model_config["network"], _global_step))
 
-        # Increment step counter, check if maximum iterations per epoch is 
-        # achieved and stop in that case
-        _global_step = sess.run(increment_global_step)
+            # Increment step counter, check if maximum iterations per epoch is 
+            # achieved and stop in that case
+            _global_step = sess.run(increment_global_step)
+
+    else:
+        _global_step = sess.run(global_step)
+        _d_global_step = sess.run(d_global_step)
+        _g_global_step = sess.run(g_global_step)
+        for _ in range(model_config["epoch_it"]):
+            for _ in range(model_config["d_epoch_it"]):
+                _, _disc_summaries = sess.run([d_solver, disc_summaries])
+                writer.add_summary(_disc_summaries, global_step=_d_global_step)
+                if _d_global_step % 100 == 0:
+                    print('    [{}] Current step'.format("disc", _d_global_step))
+                _d_global_step = sess.run(increment_d_global_step)
+            
+            for _ in range(model_config["g_epoch_it"]):
+                _, _gen_summaries = sess.run([g_solver, gen_summaries])
+                writer.add_summary(_gen_summaries, global_step=_g_global_step)
+                if _g_global_step % 100 == 0:
+                    print('    [{}] Current step: {}'.format("gen", _g_global_step))
+                _g_global_step = sess.run(increment_g_global_step)
+                # TRAIN SEPARATOR
+            _, _sup_summaries = sess.run([separator_solver, sup_summaries])
+            writer.add_summary(_sup_summaries, global_step=_global_step) 
+            if _global_step % 100 == 0:
+                print('    [{}] Current step: {}'.format("sep", _global_step))
+            _global_step = sess.run(increment_global_step)
+
 
     # Epoch finished - Save model
     print("Finished epoch!")
@@ -196,13 +305,26 @@ def optimise(model_config, experiment_id):
     best_loss = 10000
     model_path = None
     best_model_path = None
-    for i in range(2):
+    
+    d_epoch_list = [0,0]
+    g_epoch_list = [0,0]
+    epoch_list = [2000,2000]
+    if model_config["discriminated"]:
+        d_epoch_list = [0,0,50,5,2]
+        g_epoch_list = [0,0,1,1,1]
+        epoch_list = [2000,2000,2000,2000,2000]
+    for i in range(len(epoch_list)):
         worse_epochs = 0
         if i>=1:
-            print("Finished first round of training, now entering fine-tuning stage")
             if i==1:
+                print("Finished first round of training, now entering fine-tuning stage")
                 model_config["batch_size"] *= 2
-            model_config["init_sup_sep_lr"] = model_config["init_sup_sep_lr"] / 10
+                model_config["init_sup_sep_lr"] = model_config["init_sup_sep_lr"] / 10
+ 
+        model_config["epoch_it"] = epoch_list[i]
+        model_config["d_epoch_it"] = d_epoch_list[i]
+        model_config["g_epoch_it"] = g_epoch_list[i]
+            
         while worse_epochs < model_config["worse_epochs"]: 
             # Early stopping on validation set after a few epochs
             print("EPOCH: " + str(epoch))

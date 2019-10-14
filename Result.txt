@@ -1,0 +1,64 @@
+assertion rule
+evaluate_subnet == deep_supervised
+(sub_num_layers != None) == deep_supervised
+min_skip_num_layers <==> frozen_downsample == !downsample_trainable 
+d_min_sub_num_layers <==> discriminated == !context
+semi_loss_ratio <==> semi_supervised
+random_recovery <==> !(recovery_augmented)
+residual <==> not difference, only direct
+
+
+baseline.stereo
+num_layers = 10
+4.4014, 3.2774, 0.16505884, 14.496867
+10.42048, 2.93941, 11.643022, 6.52003
+num_layers = 9
+4.47834, 3.24275, 0.36504, 14.556016
+10.52695, 3.0411, 11.78615, 6.50322
+num_layers = 8
+4.26458, 3.19005, -0.298758942, 15.20362
+10.26484, 2.96997, 11.433794, 6.24404
+
+@original settings
+unet 
+num_layers = 10 
+output_type = difference
+context = True
+normal (not deep supervised)
+frozen downsample = True
+min_skip_num_layers = None
+id = 489777 --> more frozen by one downsample layer
+(2.70078, 2.28217, -2.94930, 16.296217)
+(8.67127, 2.67047, 9.310606, 5.418235)
+id = 231955
+(2.74869, 2.15711, -3.3087585, 16.58888)
+(8.57401, 2.61687, 9.01217, 5.09111)
+
+
+
+@original settings
+unet++
+batch_size = 8
+num_layers = 10
+num_increase_filters = 24
+output_type = difference
+context = True
+normal (not deep supervised)
+frozen downsample = False
+min_skip_num_layers = None
+random_recovery = False
+id = 873040 @m40
+
+
+
+@original settings
+unet 
+num_layers = 10 
+output_type = difference
+context = True
+normal (not deep supervised)
+frozen downsample = True
+min_skip_num_layers = 4
+id = 817286
+(2.6)
+
