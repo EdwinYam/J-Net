@@ -122,7 +122,7 @@ def train(model_config, experiment_id, load_model=None):
             real_mag = tf.abs(stfts)
             sub_separator_loss = 0
             if model_config["deep_supervised"]:
-                for i in range(model_config["min_sub_num_layers"], model_config["num_layers"]):
+                for i in range(model_config["num_layers"]-model_config["min_sub_num_layers"]):
                     sub_separator_loss += tf.reduce_mean(tf.abs(real_mag - sep_source[i][key]))
                     if model_config["semi_supervised"]:
                         sub_separator_loss += model_config["semi_loss_ratio"] * tf.reduce_mean(tf.abs(real_mag-re_sep_source[i][key]))
@@ -135,7 +135,7 @@ def train(model_config, experiment_id, load_model=None):
         else:
             sub_separator_loss = 0.0
             if model_config["deep_supervised"]:
-                for i in range(model_config["min_sub_num_layers"], model_config["num_layers"]):
+                for i in range(model_config["num_layers"]-model_config["min_sub_num_layers"]):
                     sub_separator_loss += tf.reduce_mean(tf.square(real_source - sep_source[i][key]))
                     if model_config["semi_supervised"]:
                         sub_separator_loss += tf.reduce_mean(tf.square(real_source - re_sep_source[i][key]))
@@ -240,7 +240,10 @@ def train(model_config, experiment_id, load_model=None):
         restorer = tf.train.Saver(tf.global_variables(), 
                                   write_version=tf.train.SaverDef.V2)
         print("Num of variables: " + str(len(tf.global_variables())))
-        restorer.restore(sess, load_model)
+        if os.path.exists(load_model) and os.path.isdir(load_model):
+            restorer.restore(sess, tf.train.latest_checkpoint(load_model))
+        else:
+            restorer.restore(sess, load_model)
         print('Pre-trained model restored from file ' + load_model)
 
     saver = tf.train.Saver(tf.global_variables(),
@@ -270,7 +273,7 @@ def train(model_config, experiment_id, load_model=None):
                 _, _disc_summaries = sess.run([d_solver, disc_summaries])
                 writer.add_summary(_disc_summaries, global_step=_d_global_step)
                 if _d_global_step % 100 == 0:
-                    print('    [{}] Current step'.format("disc", _d_global_step))
+                    print('    [{}] Current step: {}'.format("disc", _d_global_step))
                 _d_global_step = sess.run(increment_d_global_step)
             
             for _ in range(model_config["g_epoch_it"]):
@@ -300,10 +303,9 @@ def train(model_config, experiment_id, load_model=None):
     return save_path
 
 @config_ingredient.capture
-def optimise(model_config, experiment_id):
+def optimise(model_config, experiment_id, model_path=None):
     epoch = 0
     best_loss = 10000
-    model_path = None
     best_model_path = None
     
     d_epoch_list = [0,0]
@@ -361,11 +363,17 @@ def run(cfg):
             os.makedirs(dir)
 
     # Optimize in a supervised fashion until validation loss worsens
+    model_path = None
+    #model_path = './checkpoints/unet_9_normal_frozen_downsample_False-237378'
+    #model_path = './checkpoints/unet_9_normal_frozen_downsample_False-274777'
+    #model_path = './checkpoints/unet_9_normal_frozen_downsample_False-375889'
+    #model_path = './checkpoints/unet_9_normal_frozen_downsample_False-291214'
     
-    #sup_model_path = '/media/WaveUnet/checkpoints/unet_8_normal-884107-174000'
-    #model_config["estimates_path"] = '/media/WaveUnet/Source_Estimates/unet_8_normal-884107'
+    #not imp model_path = './checkpoints/unet_9_normal_frozen_downsample_False-389011'
+    #model_path = './checkpoints/unet++_9_normal_frozen_downsample_False-485470'
+    #model_path = './checkpoints/unet++_9_deep_supervised_frozen_downsample_False-869415/'
     
-    sup_model_path, sup_loss = optimise()
+    sup_model_path, sup_loss = optimise(model_path=model_path)
     print("Supervised training finished! Saved model at " + sup_model_path + ". Performance: " + str(sup_loss))
 
     # Evaluate trained model on MUSDB

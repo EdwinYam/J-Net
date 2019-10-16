@@ -46,6 +46,7 @@ class NestedUnetAudioSeparator:
         self.output_activation = model_config["output_activation"] # tf.tanh
         self.deep_supervised = model_config["deep_supervised"]
         self.min_sub_num_layers = model_config["min_sub_num_layers"]
+        self.residual = model_config["residual"]
 
     def get_padding(self, shape):
         '''
@@ -265,14 +266,18 @@ class NestedUnetAudioSeparator:
                                                                    self.num_channels, 
                                                                    self.output_filter_size,
                                                                    self.padding, 
-                                                                   out_activation) for i in range(self.num_layers-self.min_sub_num_layers)]
+                                                                   out_activation,
+                                                                   input,
+                                                                   residual=self.residual) for i in range(self.num_layers-self.min_sub_num_layers)]
                 else:
                     return Models.OutputLayer.independent_outputs(final_outputs[-1],
                                                                   self.source_names,
                                                                   self.num_channels,
                                                                   self.output_filter_size,
                                                                   self.padding,
-                                                                  out_activation)
+                                                                  out_activation,
+                                                                  input,
+                                                                  residual=self.residual)
             elif self.output_type == "difference":
                 cropped_input = Utils.crop(input,
                                            final_outputs[-1].get_shape().as_list(), 
