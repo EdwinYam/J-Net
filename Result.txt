@@ -62,3 +62,13 @@ min_skip_num_layers = 4
 id = 817286
 (2.6)
 
+
+nested deep_supervised
+nested not deep_supverised
+
+baseline residual
+baseline recovery
+baseline context
+baseline semi_supverised
+baseline discriminated
+
