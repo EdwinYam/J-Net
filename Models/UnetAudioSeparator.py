@@ -83,7 +83,7 @@ class UnetAudioSeparator:
             # Go from centre feature map through up- and downsampling blocks
             for i in range(self.num_layers):
                 output_shape = 2*output_shape - 1 #Upsampling
-                if not (self.remove_random and self.random_upsample_layer[i])
+                if not (self.remove_random and self.random_upsample_layer[i]):
                     output_shape = output_shape - self.merge_filter_size + 1 # Conv
 
                 input_shape = 2*input_shape - 1 # Decimation
