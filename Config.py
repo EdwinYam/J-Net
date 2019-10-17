@@ -5,14 +5,14 @@ from sacred import Ingredient
 config_ingredient = Ingredient("cfg")
 
 '''
-This configuration is for experiment on server 508, aimed at original unet setting
+This configuration is for experiment on server m40, aimed at original unet setting
 '''
 @config_ingredient.config
 def cfg():
     # Base configuration
-    model_config = {"musdb_path" : "/media/Datasets/musdb18/", # SET MUSDB PATH HERE, AND SET CCMIXTER PATH IN CCMixter.xml
-                    "noisy_VCTK_path" : "/media/Datasets/noisy_VCTK/",
-                    # "estimates_path" : "/media/WaveUnet/Source_Estimates/", # SET THIS PATH TO WHERE YOU WANT SOURCE ESTIMATES PRODUCED BY THE TRAINED MODEL TO BE SAVED. Folder itself must exist!
+    model_config = {"musdb_path" : "/data/storage/dio/Datasets/musdb18/", # SET MUSDB PATH HERE, AND SET CCMIXTER PATH IN CCMixter.xml
+                    "noisy_VCTK_path" : "/data/storage/dio/Datasets/noisy_VCTK/",
+                    # "estimates_path" : "/data/storage/dio/Web-Unet/Source_Estimates/", # SET THIS PATH TO WHERE YOU WANT SOURCE ESTIMATES PRODUCED BY THE TRAINED MODEL TO BE SAVED. Folder itself must exist!
                     "data_path" : "data", # Set this to where the preprocessed dataset should be saved
 
                     "model_base_dir" : "checkpoints", # Base folder for model checkpoints
@@ -80,7 +80,7 @@ def cfg():
     model_config["num_channels"] = 1 if model_config["mono_downmix"] else 2
     # model_config["loss_type"] = "deep_supervised" if model_config["deep_supervised"] else "normal" 
     model_config["experiment_id"] = "{}-{}_{}_{}-{}".format(model_config["network"], model_config["num_layers"], 'RNGlayer', model_config["add_random_layer"], experiment_id)
-    model_config["estimates_path"] = os.path.join("/media/WaveUnet/Source_Estimates", model_config["experiment_id"])
+    model_config["estimates_path"] = os.path.join("/data/storage/dio/Web-Unet/Source_Estimates", model_config["experiment_id"])
 
 @config_ingredient.named_config
 def baseline():
