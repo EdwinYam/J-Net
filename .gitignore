@@ -6,3 +6,5 @@ logs
 temp
 __pycache__
 Source_Estimates
+Config.py
+CCMixter.xml
