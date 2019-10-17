@@ -165,33 +165,33 @@ def train(model_config, experiment_id, load_model=None):
     update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
     with tf.control_dependencies(update_ops):
         with tf.variable_scope("separator_solver"):
-            separator_solver = tf.compat.v1.train.AdamOptimizer(learning_rate=model_config["init_sup_sep_lr"]).minimize(separator_loss, var_list=separator_vars)
+            separator_solver = tf.train.AdamOptimizer(learning_rate=model_config["init_sup_sep_lr"]).minimize(separator_loss, var_list=separator_vars)
 
     # SUMMARIES
-    tf.compat.v1.summary.scalar("sep_loss", separator_loss, collections=["sup"])
-    tf.compat.v1.summary.scalar("semi_loss", semi_loss, collections=["sup"])
-    tf.compat.v1.summary.scalar("recover_loss", recover_loss, collections=["sup"])
-    sup_summaries = tf.compat.v1.summary.merge_all(key='sup')
+    tf.summary.scalar("sep_loss", separator_loss, collections=["sup"])
+    tf.summary.scalar("semi_loss", semi_loss, collections=["sup"])
+    tf.summary.scalar("recover_loss", recover_loss, collections=["sup"])
+    sup_summaries = tf.summary.merge_all(key='sup')
 
     # Start session and queue input threads
     config = tf.ConfigProto(device_count={'GPU':1})
     config.gpu_options.allow_growth=True
     sess = tf.Session(config=config)
     sess.run(tf.global_variables_initializer())
-    writer = tf.compat.v1.summary.FileWriter(os.path.join(model_config["log_dir"], model_config["experiment_id"]),
+    writer = tf.summary.FileWriter(os.path.join(model_config["log_dir"], model_config["experiment_id"]),
                                    graph=sess.graph)
 
     # CHECKPOINTING
     # Load pretrained model to continue training, if we are supposed to
     if load_model != None:
-        restorer = tf.compat.v1.train.Saver(tf.global_variables(), 
-                                  write_version=tf.compat.v1.train.SaverDef.V2)
+        restorer = tf.train.Saver(tf.global_variables(), 
+                                  write_version=tf.train.SaverDef.V2)
         print("Num of variables: " + str(len(tf.global_variables())))
         restorer.restore(sess, load_model)
         print('Pre-trained model restored from file ' + load_model)
 
-    saver = tf.compat.v1.train.Saver(tf.global_variables(),
-                                     write_version=tf.compat.v1.train.SaverDef.V2)
+    saver = tf.train.Saver(tf.global_variables(),
+                                     write_version=tf.train.SaverDef.V2)
 
     # Start training loop
     _global_step = sess.run(global_step)
