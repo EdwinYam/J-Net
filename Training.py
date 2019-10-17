@@ -157,6 +157,8 @@ def train(model_config, experiment_id, load_model=None):
         elif var.name.split('/')[1].split('_')[1] in model_config["source_names"]:
             separator_vars.append(var)
             print(var.name)
+        else:
+            print("    [Untrainable] {}".format(var.name))
 
     print("Num of Sep_Vars: " + str(Utils.getNumParams(separator_vars)))
     print("Num of variables: " + str(len(tf.global_variables())))

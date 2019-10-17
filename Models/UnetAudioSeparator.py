@@ -41,7 +41,7 @@ class UnetAudioSeparator:
         self.source_names = model_config["source_names"]
         self.num_channels = 1 if model_config["mono_downmix"] else 2
         self.output_activation = model_config["output_activation"]
-        self.add_random_layer = not model_config["add_random_layer"]
+        self.add_random_layer = model_config["add_random_layer"]
         self.min_skip_num_layers = model_config["min_skip_num_layers"]
         self.max_skip_num_layers = model_config["max_skip_num_layers"]
         self.random_downsample_layer = [ (i in model_config["random_downsample_layer"]) for i in range(self.num_layers) ]
@@ -122,6 +122,7 @@ class UnetAudioSeparator:
                     enc_outputs.append(current_layer)
                     print("    [unet] downconv{} shape: {}".format(i+1, enc_outputs[i].get_shape().as_list()))
                     current_layer = current_layer[:,::2,:] # Decimate by factor of 2 # out = (in-1)/2 + 1
+                    continue
 
                 current_layer = tf.layers.conv1d(current_layer, 
                                                  self.num_initial_filters + (self.num_increase_filters * i), 
@@ -161,7 +162,7 @@ class UnetAudioSeparator:
                 current_layer = tf.squeeze(current_layer, axis=1)
                 # UPSAMPLING FINISHED
 
-                assert(enc_outputs[-i-1].get_shape().as_list()[1] == current_layer.get_shape().as_list()[1] or self.context) #No cropping should be necessary unless we are using context
+                # assert(enc_outputs[-i-1].get_shape().as_list()[1] == current_layer.get_shape().as_list()[1] or self.context) #No cropping should be necessary unless we are using context
                 if (self.num_layers-i < self.max_skip_num_layers and self.num_layers-i > self.min_skip_num_layers) and self.add_random_layer:
                     current_layer = Utils.crop_and_concat(enc_outputs[-i-1], current_layer, match_feature_dim=False)
                 print("    [unet] upconv_{} shape: {}".format(self.num_layers-i, current_layer.get_shape().as_list()))
