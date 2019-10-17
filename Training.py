@@ -57,7 +57,7 @@ def train(model_config, experiment_id, load_model=None):
 
     sep_input_shape, sep_output_shape = separator_class.get_padding(np.array(disc_input_shape))
     separator_func = separator_class.get_output
-    discriminator_func = None if not model_config["discriminated"] partial(separator_func, use_discriminator=True)
+    discriminator_func = None if not model_config["discriminated"] else partial(separator_func, use_discriminator=True)
 
     # TODO: Add noisy_VCTK datasets for training
     # Placeholders and input normalisation
