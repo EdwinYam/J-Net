@@ -43,8 +43,9 @@ class UnetAudioSeparator:
         self.output_activation = model_config["output_activation"]
         self.add_random_layer = not model_config["add_random_layer"]
         self.min_skip_num_layers = model_config["min_skip_num_layers"]
-        self.random_downsample_layer = [ (i not in model_config["random_downsample_layer"]) for i in self.num_layers ]
-        self.random_upsample_layer = [ (i not in model_config["random_upsample_layer"]) for i in self.num_layers]
+        self.max_skip_num_layers = model_config["max_skip_num_layers"]
+        self.random_downsample_layer = [ (i in model_config["random_downsample_layer"]) for i in range(self.num_layers) ]
+        self.random_upsample_layer = [ (i in model_config["random_upsample_layer"]) for i in range(self.num_layers) ]
         self.remove_random = model_config["remove_random"]
         self.use_meanvar = model_config["use_meanvar"]
         # self.residual = model_config["residual"]
@@ -87,7 +88,7 @@ class UnetAudioSeparator:
                     output_shape = output_shape - self.merge_filter_size + 1 # Conv
 
                 input_shape = 2*input_shape - 1 # Decimation
-                if not (self.remove_random and self.random_downsample_layer[self.num_layers-i-1])
+                if not (self.remove_random and self.random_downsample_layer[self.num_layers-i-1]):
                     if i < self.num_layers - 1:
                         input_shape = input_shape + self.filter_size - 1 # Conv
                     else:
@@ -129,7 +130,7 @@ class UnetAudioSeparator:
                                                  activation=LeakyReLU, 
                                                  padding=self.padding, 
                                                  name='downsample_conv_{}'.format(i), 
-                                                 trainable=(self.add_random_layer and self.random_downsample_layer[i])) # out = in - filter + 1
+                                                 trainable= not(self.add_random_layer and self.random_downsample_layer[i])) # out = in - filter + 1
                 enc_outputs.append(current_layer)
                 print("    [unet] downconv{} shape: {}".format(i+1, enc_outputs[i].get_shape().as_list()))
                 current_layer = current_layer[:,::2,:] # Decimate by factor of 2 # out = (in-1)/2 + 1
@@ -140,7 +141,7 @@ class UnetAudioSeparator:
                                              activation=LeakyReLU,
                                              padding=self.padding, 
                                              name='downsample_conv_{}'.format(self.num_layers),
-                                             trainable=(self.add_random_layer and self.random_downsample_layer[i])) # One more conv here since we need to compute features after last decimation
+                                             trainable=not(self.add_random_layer and self.random_downsample_layer[i])) # One more conv here since we need to compute features after last decimation
 
 
             # Feature map here shall be X along one dimension
@@ -161,7 +162,7 @@ class UnetAudioSeparator:
                 # UPSAMPLING FINISHED
 
                 assert(enc_outputs[-i-1].get_shape().as_list()[1] == current_layer.get_shape().as_list()[1] or self.context) #No cropping should be necessary unless we are using context
-                if (self.num_layers - i > self.min_skip_num_layers) and self.add_random_layer:
+                if (self.num_layers-i < self.max_skip_num_layers and self.num_layers-i > self.min_skip_num_layers) and self.add_random_layer:
                     current_layer = Utils.crop_and_concat(enc_outputs[-i-1], current_layer, match_feature_dim=False)
                 print("    [unet] upconv_{} shape: {}".format(self.num_layers-i, current_layer.get_shape().as_list()))
                 if self.random_upsample_layer[self.num_layers-i-1] and self.remove_random:
@@ -173,7 +174,7 @@ class UnetAudioSeparator:
                                                  name="upsample_conv_{}".format(self.num_layers-i-1),
                                                  activation=LeakyReLU,
                                                  padding=self.padding,
-                                                 trainable=(self.add_random_layer and self.random_upsample_layer[self.num_layes-i-1]))  # out = in - filter + 1
+                                                 trainable=not(self.add_random_layer and self.random_upsample_layer[self.num_layers-i-1]))  # out = in - filter + 1
 
             current_layer = Utils.crop_and_concat(input, current_layer, match_feature_dim=False)
 

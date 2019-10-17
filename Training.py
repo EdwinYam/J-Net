@@ -57,7 +57,6 @@ def train(model_config, experiment_id, load_model=None):
 
     sep_input_shape, sep_output_shape = separator_class.get_padding(np.array(disc_input_shape))
     separator_func = separator_class.get_output
-    discriminator_func = None if not model_config["discriminated"] else partial(separator_func, use_discriminator=True)
 
     # TODO: Add noisy_VCTK datasets for training
     # Placeholders and input normalisation
@@ -119,9 +118,9 @@ def train(model_config, experiment_id, load_model=None):
             else:
                 separator_loss += tf.reduce_mean(tf.abs(real_mag - sep_source[key])) 
                 if model_config["random_recovery"]:
-                    recover_loss += 0.5*tf.reduce_mean(tf.abs(real_source - recover_sources[key][key]))
+                    recover_loss += 0.75*tf.reduce_mean(tf.abs(real_source - recover_sources[key][key]))
                 if model_config["semi_supervised"]:
-                    semi_loss += 0.5*tf.reduce_mean(tf.abs(real_source - re_separator_sources[key]))
+                    semi_loss += 0.75*tf.reduce_mean(tf.abs(real_source - re_separator_sources[key][key]))
         else:
             sub_separator_loss = 0.0
             if model_config["deep_supervised"]:
@@ -131,9 +130,9 @@ def train(model_config, experiment_id, load_model=None):
             else:
                 separator_loss += tf.reduce_mean(tf.square(real_source - sep_source[key]))
                 if model_config["random_recovery"]:
-                    recover_loss += 0.5*tf.reduce_mean(tf.square(real_source - recover_sources[key][key]))
+                    recover_loss += 0.75*tf.reduce_mean(tf.square(real_source - recover_sources[key][key]))
                 if model_config["semi_supervised"]:
-                    semi_loss += 0.5*tf.reduce_mean(tf.square(real_source - re_separator_sources[key]))
+                    semi_loss += 0.75*tf.reduce_mean(tf.square(real_source - re_separator_sources[key][key]))
     # Normalise by number of sources 
     separator_loss = separator_loss / float(model_config["num_sources"]) 
 
@@ -145,7 +144,20 @@ def train(model_config, experiment_id, load_model=None):
     increment_global_step = tf.assign(global_step, global_step + 1)
 
     # Set up optimizers
-    separator_vars = Utils.getTrainableVariables("separator")
+    # separator_vars = Utils.getTrainableVariables("separator")
+    t_vars = tf.trainable_variables()
+    separator_vars = list()
+    for var in t_vars:
+        if "downsample" in var.name and int(var.name.split('/')[-2].split('_')[-1]) not in model_config["random_downsample_layer"]:
+            separator_vars.append(var)
+            print(var.name)
+        elif "upsample" in var.name and int(var.name.split('/')[-2].split('_')[-1]) not in model_config["random_upsample_layer"]:
+            separator_vars.append(var)
+            print(var.name)
+        elif var.name.split('/')[1].split('_')[1] in model_config["source_names"]:
+            separator_vars.append(var)
+            print(var.name)
+
     print("Num of Sep_Vars: " + str(Utils.getNumParams(separator_vars)))
     print("Num of variables: " + str(len(tf.global_variables())))
     
@@ -157,6 +169,8 @@ def train(model_config, experiment_id, load_model=None):
 
     # SUMMARIES
     tf.compat.v1.summary.scalar("sep_loss", separator_loss, collections=["sup"])
+    tf.compat.v1.summary.scalar("semi_loss", semi_loss, collections=["sup"])
+    tf.compat.v1.summary.scalar("recover_loss", recover_loss, collections=["sup"])
     sup_summaries = tf.compat.v1.summary.merge_all(key='sup')
 
     # Start session and queue input threads
@@ -257,10 +271,9 @@ def run(cfg):
 
     # Optimize in a supervised fashion until validation loss worsens
     
-    #sup_model_path = '/media/WaveUnet/checkpoints/unet_8_normal-884107-174000'
-    #model_config["estimates_path"] = '/media/WaveUnet/Source_Estimates/unet_8_normal-884107'
-    
-    sup_model_path, sup_loss = optimise()
+    model_path = None
+    #model_path = "checkpoints/unet-10_RNGlayer_False-107243/107243-28000"
+    sup_model_path, sup_loss = optimise(model_path=model_path)
     print("Supervised training finished! Saved model at " + sup_model_path + ". Performance: " + str(sup_loss))
     print("Model Configuration: {}".format(model_config))
  
