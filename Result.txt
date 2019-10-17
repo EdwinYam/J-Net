@@ -55,22 +55,22 @@ context = False
 normal
 frozen downsample = False/True
 min_skip_num_layers = None/0,0,4,9'
-use_mean_and_var = False/False,True,True,True'
+##use_mean_and_var = False/False,True,True,True'
 
 frozen upsample = True
-use_mean_and_var = True
+##use_mean_and_var = True
 
 stride downsample = True
-use_mean_and_var = True
+##use_mean_and_var = True
 
 stride unet = True
-use_mean_and_var = True
+##use_mean_and_var = True
 
 remove stride downsample layer = True
-use_mean_and_var = True
+##use_mean_and_var = True
 
 remove stride unet random layer = True
-use_mean_and_var = True
+##use_mean_and_var = True
 
 #################
 @original settings
