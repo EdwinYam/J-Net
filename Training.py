@@ -57,7 +57,7 @@ def train(model_config, experiment_id, load_model=None):
 
     sep_input_shape, sep_output_shape = separator_class.get_padding(np.array(disc_input_shape))
     separator_func = separator_class.get_output
-    discriminator_func = partial(separator_func, use_discriminator=True)
+    discriminator_func = None if not model_config["discriminated"] partial(separator_func, use_discriminator=True)
 
     # TODO: Add noisy_VCTK datasets for training
     # Placeholders and input normalisation
@@ -67,18 +67,8 @@ def train(model_config, experiment_id, load_model=None):
                                    partition="train")
 
     iterator = dataset.make_one_shot_iterator()
-    _batch = iterator.get_next()
-    batch = dict()
-    if model_config["random_recovery"] and random.uniform(0,1) > 0.3:
-        chosen_source = model_config["source_names"][random.randint(0,model_config["num_sources"]-1)]
-        batch["mix"] = _batch[chosen_source]
-        for name in model_config["source_names"]:
-            if name != chosen_source:
-                batch[name] = tf.zeros_like(_batch[name])
-            else:
-                batch[name] = _batch[name]
-    else:
-        batch = _batch
+    
+    batch = iterator.get_next()
     print("Training...")
 
     # BUILD MODELS
@@ -88,9 +78,25 @@ def train(model_config, experiment_id, load_model=None):
     separator_sources = separator_func(batch["mix"], True, 
                                        not model_config["raw_audio_loss"], 
                                        reuse=False)
-
+    
+    recover_sources = None if not model_config["random_recovery"] else dict()
+    if model_config["random_recovery"]:
+        for key in model_config["source_names"]:
+            recover_sources[key] = separator_func(batch[key], True,
+                                                  not model_config["raw_audio_loss"],
+                                                  reuse=True)
+    assert((model_config["semi_supervised"] and not model_config["context"]) or not model_config["semi_supervised"])        
+    re_separator_sources = None if not model_config["semi_supervised"] else dict()
+    if model_config["semi_supervised"]:
+        for key in model_config["source_names"]:
+            re_separator_sources[key] = separator_func(separator_sources[key], True, 
+                                                       not model_config["raw_audio_loss"], 
+                                                       reuse=True)
+        
     # Supervised objective: MSE for raw audio, MAE for magnitude space (Jansson U-Net)
     separator_loss = 0.0
+    recover_loss = 0.0
+    semi_loss = 0.0
     for key in model_config["source_names"]:
         real_source = batch[key]
         sep_source = separator_sources
@@ -104,22 +110,30 @@ def train(model_config, experiment_id, load_model=None):
                                            fft_length=1024, 
                                            window_fn=window)
             real_mag = tf.abs(stfts)
-            sub_separator_loss = 0
+            sub_separator_loss = 0.0
             if model_config["deep_supervised"]:
-                for i in range(model_config["min_sub_num_layers"], model_config["num_layers"]):
+                for i in range(model_config["num_layers"]-model_config["min_sub_num_layers"]):
                     sub_separator_loss += tf.reduce_mean(tf.abs(real_mag - sep_source[i][key]))
-                sub_separator_loss /= float(model_config["num_layers"])
+                sub_separator_loss /= float(model_config["num_layers"]-model_config["min_sub_num_layers"])
                 separator_loss += sub_separator_loss
             else:
                 separator_loss += tf.reduce_mean(tf.abs(real_mag - sep_source[key])) 
+                if model_config["random_recovery"]:
+                    recover_loss += 0.5*tf.reduce_mean(tf.abs(real_source - recover_sources[key][key]))
+                if model_config["semi_supervised"]:
+                    semi_loss += 0.5*tf.reduce_mean(tf.abs(real_source - re_separator_sources[key]))
         else:
-            sub_separator_loss = 0
+            sub_separator_loss = 0.0
             if model_config["deep_supervised"]:
-                for i in range(model_config["min_sub_num_layers"], model_config["num_layers"]):
+                for i in range(model_config["num_layers"]-model_config["min_sub_num_layers"]):
                     sub_separator_loss += tf.reduce_mean(tf.square(real_source - sep_source[i][key]))
                 separator_loss += sub_separator_loss / float(model_config["num_layers"])
             else:
-                separator_loss += tf.reduce_mean(tf.square(real_source - sep_source[key])) 
+                separator_loss += tf.reduce_mean(tf.square(real_source - sep_source[key]))
+                if model_config["random_recovery"]:
+                    recover_loss += 0.5*tf.reduce_mean(tf.square(real_source - recover_sources[key][key]))
+                if model_config["semi_supervised"]:
+                    semi_loss += 0.5*tf.reduce_mean(tf.square(real_source - re_separator_sources[key]))
     # Normalise by number of sources 
     separator_loss = separator_loss / float(model_config["num_sources"]) 
 
@@ -132,7 +146,7 @@ def train(model_config, experiment_id, load_model=None):
 
     # Set up optimizers
     separator_vars = Utils.getTrainableVariables("separator")
-    print("Sep_Vars: " + str(Utils.getNumParams(separator_vars)))
+    print("Num of Sep_Vars: " + str(Utils.getNumParams(separator_vars)))
     print("Num of variables: " + str(len(tf.global_variables())))
     
 
@@ -192,18 +206,19 @@ def train(model_config, experiment_id, load_model=None):
     return save_path
 
 @config_ingredient.capture
-def optimise(model_config, experiment_id):
+def optimise(model_config, experiment_id, model_path=None):
     epoch = 0
     best_loss = 10000
-    model_path = None
     best_model_path = None
-    for i in range(2):
+    batch_size_list = [16,32]
+    lr_list = [1e-4,1e-5]
+    for i in range(len(lr_list)):
         worse_epochs = 0
         if i>=1:
             print("Finished first round of training, now entering fine-tuning stage")
-            if i==1:
-                model_config["batch_size"] *= 2
-            model_config["init_sup_sep_lr"] = model_config["init_sup_sep_lr"] / 10
+        model_config["batch_size"] = batch_size_list[i]
+        model_config["init_sup_sep_lr"] = lr_list[i]
+        
         while worse_epochs < model_config["worse_epochs"]: 
             # Early stopping on validation set after a few epochs
             print("EPOCH: " + str(epoch))
@@ -234,6 +249,7 @@ def optimise(model_config, experiment_id):
 def run(cfg):
     model_config = cfg["model_config"]
     print("SCRIPT START")
+    print("Model Configuration: {}".format(model_config))
     # Create subfolders if they do not exist to save results
     for dir in [model_config["model_base_dir"], model_config["log_dir"]]:
         if not os.path.exists(dir):
@@ -246,8 +262,10 @@ def run(cfg):
     
     sup_model_path, sup_loss = optimise()
     print("Supervised training finished! Saved model at " + sup_model_path + ". Performance: " + str(sup_loss))
-
+    print("Model Configuration: {}".format(model_config))
+ 
     # Evaluate trained model on MUSDB
     # TODO
     print(model_config["estimates_path"])
     Evaluate.produce_musdb_source_estimates(model_config, sup_model_path, model_config["musdb_path"], model_config["estimates_path"])
+    print("Model Configuration: {}".format(model_config))

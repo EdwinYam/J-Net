@@ -9,7 +9,8 @@ def independent_outputs(featuremap, source_names, num_channels, filter_width, pa
                                          num_channels, 
                                          filter_width, 
                                          activation=activation, 
-                                         padding=padding)
+                                         padding=padding,
+                                         name='direct_{}_conv'.format(name))
         if residual:
             outputs[name] = Utils.crop(input_mix, outputs[name].get_shape().as_list()) + outputs[name]
     
@@ -19,7 +20,12 @@ def difference_output(input_mix, featuremap, source_names, num_channels, filter_
     outputs = dict()
     sum_source = 0
     for name in source_names[:-1]:
-        out = tf.layers.conv1d(featuremap, num_channels, filter_width, activation=activation, padding=padding)
+        out = tf.layers.conv1d(featuremap, 
+                               num_channels, 
+                               filter_width, 
+                               activation=activation, 
+                               padding=padding,
+                               name='direct_{}_conv'.format(name))
         outputs[name] = out
         sum_source = sum_source + out
 

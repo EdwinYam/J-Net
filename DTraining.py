@@ -58,6 +58,8 @@ def train(model_config, experiment_id, load_model=None):
 
     sep_input_shape, sep_output_shape = separator_class.get_padding(np.array(disc_input_shape))
     separator_func = separator_class.get_output
+    # Disciminator shares parameter with the downsampling/encoder part of
+    # the separator, in order to utilize the embedding learned from downsampling
     discriminator_func = partial(separator_func, use_discriminator=True)
    
     tail_discriminators, tail_discriminators_func = dict(), dict()

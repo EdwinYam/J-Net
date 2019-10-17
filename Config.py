@@ -22,7 +22,7 @@ def cfg():
                     "d_init_sup_sep_lr" : 1e-4,
                     "g_init_sup_sep_lr" : 1e-4,
                     "epoch_it" : 2000, # Number of supervised separator steps per epoch
-                    'cache_size': 800, # Number of audio snippets buffered in the random shuffle queue. Larger is better, since workers put multiple examples of one song into this queue. The number of different songs that is sampled from with each batch equals cache_size / num_snippets_per_track. Set as high as your RAM allows.
+                    'cache_size': 1000, # Number of audio snippets buffered in the random shuffle queue. Larger is better, since workers put multiple examples of one song into this queue. The number of different songs that is sampled from with each batch equals cache_size / num_snippets_per_track. Set as high as your RAM allows.
                     'num_workers' : 6, # Number of processes used for each TF map operation used when loading the dataset
                     "num_snippets_per_track" : 100, # Number of snippets that should be extracted from each song at a time after loading it. Higher values make data loading faster, but can reduce the batches song diversity
                     'num_layers' : 12, # How many U-Net layers
@@ -44,20 +44,24 @@ def cfg():
                     'augmentation' : True, # Random attenuation of source signals to improve generalisation performance (data augmentation)
                     'raw_audio_loss' : True, # Only active for unet_spectrogram network. True: L2 loss on audio. False: L1 loss on spectrogram magnitudes for training and validation and test loss
                     'worse_epochs' : 15, # Patience for early stoppping on validation set
-                    'deep_supervised': False, # Whether to use nested arch.
-                    'min_sub_num_layers': 5,
-                    'sub_num_layers': None,
-                    'min_skip_num_layers': 4,
-                    'd_min_sub_num_layers': 5,
-                    'evaluate_subnet': False,
-                    'frozen_downsample': False,
-                    'discriminated': False,
-                    'g_loss_weight': 10,
-                    'd_epoch_it': 10,
-                    'g_epoch_it': 1,
+                    #'deep_supervised': False, # Whether to use nested arch.
+                    #'min_sub_num_layers': 0,
+                    #'sub_num_layers': None,
+                    'min_skip_num_layers': 0,
+                    #'d_min_sub_num_layers': 0,
+                    #'evaluate_subnet': False,
+                    'add_random_layer': False,
+                    'use_meanvar': False,
+                    'random_downsample_layer': list(),
+                    'random_upsample_layer': list(),
+                    'remove_random': False,
+                    #'discriminated': False,
+                    #'g_loss_weight': 1.0,
+                    #'d_epoch_it': 1,
+                    #'g_epoch_it': 1,
                     'semi_supervised': False,
-                    'semi_loss_ratio': 0.4,
-                    'residual': False,
+                    'semi_loss_ratio': 0.1,
+                    #'residual': False,
                     'random_recovery': False,
                     'experiment_id': ''
                     }
@@ -74,8 +78,8 @@ def cfg():
         raise NotImplementedError
     model_config["num_sources"] = len(model_config["source_names"])
     model_config["num_channels"] = 1 if model_config["mono_downmix"] else 2
-    model_config["loss_type"] = "deep_supervised" if model_config["deep_supervised"] else "normal" 
-    model_config["experiment_id"] = "{}_{}_{}_{}_{}-{}".format(model_config["network"], model_config["num_layers"], model_config["loss_type"], 'frozen_downsample', model_config["frozen_downsample"], experiment_id)
+    # model_config["loss_type"] = "deep_supervised" if model_config["deep_supervised"] else "normal" 
+    model_config["experiment_id"] = "{}-{}_{}_{}-{}".format(model_config["network"], model_config["num_layers"], 'RNGlayer', model_config["add_random_layer"], experiment_id)
     model_config["estimates_path"] = os.path.join("/media/WaveUnet/Source_Estimates", model_config["experiment_id"])
 
 @config_ingredient.named_config
@@ -96,6 +100,69 @@ def baseline_context():
         "output_type" : "difference",
         "context" : True
     }
+
+#$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$#
+# This is config for baseline
+@config_ingredient.named_config
+def baseline_10():
+    print("Train model with fix random encoder/downsampling part")
+    model_config = {
+        "batch_size": 16,
+        "num_layers": 10,
+        "num_increase_filters": 24,
+        "network": "unet",
+        "output_type": "difference",
+        "context": False,
+        "mono_downmix": False,
+        "add_random_layer": False,
+        "use_meanvar": False,
+        "random_downsample_layer": list()
+        "random_upsample_layer": list()
+        "min_skip_num_layers": 0,
+        "remove_random": False,
+    }
+
+@config_ingredient.named_config
+def baseline_12():
+    print("Train model with fix random encoder/downsampling part")
+    model_config = {
+        "batch_size": 16,
+        "num_layers": 12,
+        "num_increase_filters": 24,
+        "network": "unet",
+        "output_type": "difference",
+        "context": True,
+        "mono_downmix": False,
+        "add_random_layer": False,
+        "use_meanvar": False,
+        "random_downsample_layer": list()
+        "random_upsample_layer": list()
+        "min_skip_num_layers": 0,
+        "remove_random": False,
+    }
+
+# This is config for random fix encoder 
+@config_ingredient.named_config
+def fix_downsample():
+    print("Train model with fix random encoder/downsampling part")
+    model_config = {
+        "batch_size": 16,
+        "num_layers": 10,
+        "num_increase_filters": 24,
+        "network": "unet",
+        "output_type": "difference",
+        "context": False,
+        "mono_downmix": False,
+        "add_random_layer": True,
+        "use_meanvar": False,
+        "random_downsample_layer": [ i for i in range(10) ]
+        "random_upsample_layer": list()
+        "min_skip_num_layers": 0,
+        "remove_random": False,
+    }
+    
+#=====================================================#
+#&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&#
 
 # This is config for current repo
 @config_ingredient.named_config

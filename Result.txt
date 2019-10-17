@@ -34,6 +34,48 @@ id = 231955
 (2.74869, 2.15711, -3.3087585, 16.58888)
 (8.57401, 2.61687, 9.01217, 5.09111)
 
+Add learning rate schedule
+get mean and variance for 'unet_10_direct_nocontext's parameters
+##################
+unet
+num_layers = 12
+output_type = difference
+context = True
+normal
+frozen downsample = False/True
+min_skip_num_layers = None
+id = 
+
+##################
+@original settings
+unet
+num_layers = 10
+output_type = difference
+context = False
+normal
+frozen downsample = False/True
+min_skip_num_layers = None/0,0,4,9'
+use_mean_and_var = False/False,True,True,True'
+
+frozen upsample = True
+use_mean_and_var = True
+
+stride downsample = True
+use_mean_and_var = True
+
+stride unet = True
+use_mean_and_var = True
+
+remove stride downsample layer = True
+use_mean_and_var = True
+
+remove stride unet random layer = True
+use_mean_and_var = True
+
+#################
+@original settings
+best settings with identity loss and double enhancement
+
 
 
 @original settings

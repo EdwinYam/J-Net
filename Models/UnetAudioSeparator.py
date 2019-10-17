@@ -41,9 +41,14 @@ class UnetAudioSeparator:
         self.source_names = model_config["source_names"]
         self.num_channels = 1 if model_config["mono_downmix"] else 2
         self.output_activation = model_config["output_activation"]
-        self.downsample_trainable = not model_config["frozen_downsample"]
+        self.add_random_layer = not model_config["add_random_layer"]
         self.min_skip_num_layers = model_config["min_skip_num_layers"]
-        self.residual = model_config["residual"]
+        self.random_downsample_layer = [ (i not in model_config["random_downsample_layer"]) for i in self.num_layers ]
+        self.random_upsample_layer = [ (i not in model_config["random_upsample_layer"]) for i in self.num_layers]
+        self.remove_random = model_config["remove_random"]
+        self.use_meanvar = model_config["use_meanvar"]
+        # self.residual = model_config["residual"]
+        self.residual = False
 
     def get_padding(self, shape):
         '''
@@ -78,13 +83,15 @@ class UnetAudioSeparator:
             # Go from centre feature map through up- and downsampling blocks
             for i in range(self.num_layers):
                 output_shape = 2*output_shape - 1 #Upsampling
-                output_shape = output_shape - self.merge_filter_size + 1 # Conv
+                if not (self.remove_random and self.random_upsample_layer[i])
+                    output_shape = output_shape - self.merge_filter_size + 1 # Conv
 
                 input_shape = 2*input_shape - 1 # Decimation
-                if i < self.num_layers - 1:
-                    input_shape = input_shape + self.filter_size - 1 # Conv
-                else:
-                    input_shape = input_shape + self.input_filter_size - 1
+                if not (self.remove_random and self.random_downsample_layer[self.num_layers-i-1])
+                    if i < self.num_layers - 1:
+                        input_shape = input_shape + self.filter_size - 1 # Conv
+                    else:
+                        input_shape = input_shape + self.input_filter_size - 1
 
             # Output filters
             output_shape = output_shape - self.output_filter_size + 1
@@ -109,17 +116,32 @@ class UnetAudioSeparator:
 
             # Down-convolution: Repeat strided conv
             for i in range(self.num_layers):
-                current_layer = tf.layers.conv1d(current_layer, self.num_initial_filters + (self.num_increase_filters * i), self.filter_size, strides=1, activation=LeakyReLU, padding=self.padding, name='downconv_{}'.format(i), trainable=self.downsample_trainable) # out = in - filter + 1
+                if self.random_downsample_layer[i] and self.remove_random:
+                    assert(self.add_random_layer)
+                    enc_outputs.append(current_layer)
+                    print("    [unet] downconv{} shape: {}".format(i+1, enc_outputs[i].get_shape().as_list()))
+                    current_layer = current_layer[:,::2,:] # Decimate by factor of 2 # out = (in-1)/2 + 1
+
+                current_layer = tf.layers.conv1d(current_layer, 
+                                                 self.num_initial_filters + (self.num_increase_filters * i), 
+                                                 self.filter_size, 
+                                                 strides=1, 
+                                                 activation=LeakyReLU, 
+                                                 padding=self.padding, 
+                                                 name='downsample_conv_{}'.format(i), 
+                                                 trainable=(self.add_random_layer and self.random_downsample_layer[i])) # out = in - filter + 1
                 enc_outputs.append(current_layer)
                 print("    [unet] downconv{} shape: {}".format(i+1, enc_outputs[i].get_shape().as_list()))
                 current_layer = current_layer[:,::2,:] # Decimate by factor of 2 # out = (in-1)/2 + 1
 
-            current_layer = tf.layers.conv1d(current_layer, self.num_initial_filters + (self.num_increase_filters * self.num_layers),self.filter_size,activation=LeakyReLU,padding=self.padding, name='downconv_{}'.format(self.num_layers)) # One more conv here since we need to compute features after last decimation
+            current_layer = tf.layers.conv1d(current_layer, 
+                                             self.num_initial_filters + (self.num_increase_filters * self.num_layers),
+                                             self.filter_size,
+                                             activation=LeakyReLU,
+                                             padding=self.padding, 
+                                             name='downsample_conv_{}'.format(self.num_layers),
+                                             trainable=(self.add_random_layer and self.random_downsample_layer[i])) # One more conv here since we need to compute features after last decimation
 
-            if use_discriminator:
-                enc_outputs.append(current_layer)
-                print("    [unet] downconv{} shape: {}".format(self.num_layers+1, enc_outputs[self.num_layers].get_shape().as_list()))
-                return enc_outputs
 
             # Feature map here shall be X along one dimension
 
@@ -139,16 +161,19 @@ class UnetAudioSeparator:
                 # UPSAMPLING FINISHED
 
                 assert(enc_outputs[-i-1].get_shape().as_list()[1] == current_layer.get_shape().as_list()[1] or self.context) #No cropping should be necessary unless we are using context
-                if (self.num_layers - i > self.min_skip_num_layers) and not self.downsample_trainable:
+                if (self.num_layers - i > self.min_skip_num_layers) and self.add_random_layer:
                     current_layer = Utils.crop_and_concat(enc_outputs[-i-1], current_layer, match_feature_dim=False)
                 print("    [unet] upconv_{} shape: {}".format(self.num_layers-i, current_layer.get_shape().as_list()))
+                if self.random_upsample_layer[self.num_layers-i-1] and self.remove_random:
+                    continue
 
                 current_layer = tf.layers.conv1d(current_layer, 
                                                  self.num_initial_filters + (self.num_increase_filters * (self.num_layers - i - 1)), 
                                                  self.merge_filter_size,
-                                                 name="upconv_{}".format(self.num_layers-i),
+                                                 name="upsample_conv_{}".format(self.num_layers-i-1),
                                                  activation=LeakyReLU,
-                                                 padding=self.padding)  # out = in - filter + 1
+                                                 padding=self.padding,
+                                                 trainable=(self.add_random_layer and self.random_upsample_layer[self.num_layes-i-1]))  # out = in - filter + 1
 
             current_layer = Utils.crop_and_concat(input, current_layer, match_feature_dim=False)
 
