@@ -48,6 +48,9 @@ class UnetAudioSeparator:
         self.random_upsample_layer = [ (i in model_config["random_upsample_layer"]) for i in range(self.num_layers) ]
         self.remove_random = model_config["remove_random"]
         self.use_meanvar = model_config["use_meanvar"]
+        self.add_multires_block = model_config["add_multires_block"]
+        self.add_res_path = model_config["add_res_path"]
+        self.skip_layer = model_config["skip_layer"]
         # self.residual = model_config["residual"]
         self.residual = False
 
@@ -132,7 +135,50 @@ class UnetAudioSeparator:
                                                  padding=self.padding, 
                                                  name='downsample_conv_{}'.format(i), 
                                                  trainable= not(self.add_random_layer and self.random_downsample_layer[i])) # out = in - filter + 1
-                enc_outputs.append(current_layer)
+                if self.add_multires_block:
+                    curr_layer = current_layer
+                    _current_layer = tf.layers.conv1d(curr_layer, 
+                                                     2*(self.num_initial_filters + (self.num_increase_filters * i)), 
+                                                     1, 
+                                                     strides=1, 
+                                                     activation=LeakyReLU, 
+                                                     padding='same', 
+                                                     name='downsample_multires_conv_{}'.format(i), 
+                                                     trainable= not(self.add_random_layer and self.random_downsample_layer[i])) # out = in - filter + 1
+                    for j in range(2-1):
+                        curr_layer = tf.layers.conv1d(curr_layer, 
+                                                          self.num_initial_filters + (self.num_increase_filters * i), 
+                                                          self.filter_size, 
+                                                          strides=1, 
+                                                          activation=LeakyReLU, 
+                                                          padding='same', 
+                                                          name='downsample_multires_{}_conv_{}'.format(j,i), 
+                                                          trainable= not(self.add_random_layer and self.random_downsample_layer[i])) # out = in - filter + 1            
+                        current_layer = Utils.crop_and_concat(current_layer, curr_layer, match_feature_dim=False)
+                    current_layer = current_layer + _current_layer
+
+
+                if self.add_res_path and (i in self.skip_layer):
+                    res_path = current_layer
+                    for j in range(3):
+                        res_path = tf.layers.conv1d(res_path,
+                                                    self.num_initial_filters + (self.num_increase_filters * i),
+                                                    self.filter_size,
+                                                    strides=1,
+                                                    activation=LeakyReLU,
+                                                    padding='same',
+                                                    name='downsample_res_{}_conv_{}'.format(j,i))
+                        sub_res_path = tf.layers.conv1d(res_path,
+                                                        self.num_initial_filters + (self.num_increase_filters * i),
+                                                        1,
+                                                        strides=1,
+                                                        activation=LeakyReLU,
+                                                        padding='same',
+                                                        name='downsample_sub_res_{}_conv_{}'.format(j,i))
+                        res_path = res_path + sub_res_path
+                    enc_outputs.append(res_path)
+                else:
+                    enc_outputs.append(current_layer)
                 print("    [unet] downconv{} shape: {}".format(i+1, enc_outputs[i].get_shape().as_list()))
                 current_layer = current_layer[:,::2,:] # Decimate by factor of 2 # out = (in-1)/2 + 1
 
@@ -163,8 +209,11 @@ class UnetAudioSeparator:
                 # UPSAMPLING FINISHED
 
                 # assert(enc_outputs[-i-1].get_shape().as_list()[1] == current_layer.get_shape().as_list()[1] or self.context) #No cropping should be necessary unless we are using context
-                if (self.num_layers-i < self.max_skip_num_layers and self.num_layers-i > self.min_skip_num_layers) and self.add_random_layer:
+                if self.num_layers-i-1 in self.skip_layer:
                     current_layer = Utils.crop_and_concat(enc_outputs[-i-1], current_layer, match_feature_dim=False)
+                elif (self.num_layers-i < self.max_skip_num_layers and self.num_layers-i > self.min_skip_num_layers) and self.add_random_layer:
+                    current_layer = Utils.crop_and_concat(enc_outputs[-i-1], current_layer, match_feature_dim=False)
+                
                 print("    [unet] upconv_{} shape: {}".format(self.num_layers-i, current_layer.get_shape().as_list()))
                 if self.random_upsample_layer[self.num_layers-i-1] and self.remove_random:
                     continue
@@ -176,6 +225,25 @@ class UnetAudioSeparator:
                                                  activation=LeakyReLU,
                                                  padding=self.padding,
                                                  trainable=not(self.add_random_layer and self.random_upsample_layer[self.num_layers-i-1]))  # out = in - filter + 1
+                if self.add_multires_block:
+                    curr_layer = current_layer
+                    _current_layer = tf.layers.conv1d(curr_layer, 
+                                                      2*(self.num_initial_filters + (self.num_increase_filters * i)), 
+                                                      1, 
+                                                      strides=1, 
+                                                      activation=LeakyReLU, 
+                                                      padding='same', 
+                                                      name='downsample_multires_conv_{}'.format(i)) # out = in - filter + 1
+                    for j in range(2-1):
+                        curr_layer = tf.layers.conv1d(curr_layer, 
+                                                      self.num_initial_filters + (self.num_increase_filters * i), 
+                                                      self.merge_filter_size, 
+                                                      strides=1, 
+                                                      activation=LeakyReLU, 
+                                                      padding='same', 
+                                                      name='downsample_multires_{}_conv_{}'.format(j,i)) # out = in - filter + 1            
+                        current_layer = Utils.crop_and_concat(current_layer, curr_layer, match_feature_dim=False)
+                    current_layer = current_layer + _current_layer
 
             current_layer = Utils.crop_and_concat(input, current_layer, match_feature_dim=False)
 

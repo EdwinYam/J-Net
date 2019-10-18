@@ -144,21 +144,23 @@ def train(model_config, experiment_id, load_model=None):
     increment_global_step = tf.assign(global_step, global_step + 1)
 
     # Set up optimizers
-    # separator_vars = Utils.getTrainableVariables("separator")
+    separator_vars = Utils.getTrainableVariables("separator")
     t_vars = tf.trainable_variables()
-    separator_vars = list()
     for var in t_vars:
-        if "downsample" in var.name and int(var.name.split('/')[-2].split('_')[-1]) not in model_config["random_downsample_layer"]:
-            separator_vars.append(var)
-            print(var.name)
-        elif "upsample" in var.name and int(var.name.split('/')[-2].split('_')[-1]) not in model_config["random_upsample_layer"]:
-            separator_vars.append(var)
-            print(var.name)
-        elif var.name.split('/')[1].split('_')[1] in model_config["source_names"]:
-            separator_vars.append(var)
-            print(var.name)
-        else:
-            print("    [Untrainable] {}".format(var.name))
+        print("    [Trainable] {}".format(var.name))
+    #separator_vars = list()
+    #for var in t_vars:
+    #    if "downsample" in var.name and int(var.name.split('/')[-2].split('_')[-1]) not in model_config["random_downsample_layer"]:
+    #        separator_vars.append(var)
+    #        print(var.name)
+    #    elif "upsample" in var.name and int(var.name.split('/')[-2].split('_')[-1]) not in model_config["random_upsample_layer"]:
+    #        separator_vars.append(var)
+    #        print(var.name)
+    #    elif var.name.split('/')[1].split('_')[1] in model_config["source_names"]:
+    #        separator_vars.append(var)
+    #        print(var.name)
+    #    else:
+    #        print("    [Untrainable] {}".format(var.name))
 
     print("Num of Sep_Vars: " + str(Utils.getNumParams(separator_vars)))
     print("Num of variables: " + str(len(tf.global_variables())))
@@ -226,8 +228,8 @@ def optimise(model_config, experiment_id, model_path=None):
     epoch = 0
     best_loss = 10000
     best_model_path = None
-    batch_size_list = [16,32,32,32]
-    lr_list = [1e-4,1e-5,1e-6,1e-7]
+    batch_size_list = [16,32,32]
+    lr_list = [1e-4,1e-5,1e-6]
     for i in range(len(lr_list)):
         worse_epochs = 0
         if i>=1:
