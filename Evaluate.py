@@ -70,7 +70,21 @@ def predict(track, model_config, load_model, results_dir=None):
     # resample back to the exact number of samples in the original input (with 
     # fractional orig_sr/new_sr this causes issues otherwise) 
     pred_audio = None
-    if model_config["evaluate_subnet"] and model_config["sub_num_layers"] == None:
+    if model_config["semi_supervised"]:
+        assert(not model_config["deep_supervised"])
+        pred_audio = list()
+        for index in range(3):
+            pred_audio.append({name : Utils.resample(separator_preds[index][name], model_config["expected_sr"], orig_sr)[:mix_audio.shape[0],:] for name in model_config["source_names"]})
+
+            if model_config["mono_downmix"] and mix_channels > 1: 
+                pred_audio[index] = {name : np.tile(pred_audio[index][name], [1, mix_channels]) for name in list(pred_audio[index].keys())}
+
+            if results_dir is not None:
+                scores = museval.eval_mus_track(track, pred_audio[index], output_dir=os.path.join(results_dir, "sep_times-{}".format(index)))
+                # print nicely formatted mean scores
+                print(scores)
+    
+    elif model_config["evaluate_subnet"] and model_config["sub_num_layers"] == None:
         assert(model_config["deep_supervised"])
         # We want to evaluate the quality of the output from subnet
         pred_audio = list()
@@ -85,6 +99,7 @@ def predict(track, model_config, load_model, results_dir=None):
                 scores = museval.eval_mus_track(track, pred_audio[index], output_dir=os.path.join(results_dir, str(index+1+model_config["min_sub_num_layers"])))
                 # print nicely formatted mean scores
                 print(scores)
+    
     else:       
         pred_audio = {name : Utils.resample(separator_preds[name], model_config["expected_sr"], orig_sr)[:mix_audio.shape[0],:] for name in model_config["source_names"]}
 
@@ -139,7 +154,9 @@ def predict_track(model_config, sess, mix_audio, mix_sr, sep_input_shape, sep_ou
     # Preallocate source predictions (same shape as input mixture)
     source_time_frames = mix_audio.shape[0]
     source_preds = None
-    if model_config["evaluate_subnet"] and model_config["sub_num_layers"] == None:
+    if model_config["semi_supervised"]:
+        source_preds = [{name : np.zeros(mix_audio.shape, np.float32) for name in model_config["source_names"]} for _ in range(3)]
+    elif model_config["evaluate_subnet"] and model_config["sub_num_layers"] == None:
         source_preds = [{name : np.zeros(mix_audio.shape, np.float32) for name in model_config["source_names"]} for _ in range(model_config["min_sub_num_layers"], model_config["num_layers"] + 1)]
     else:
         source_preds = {name : np.zeros(mix_audio.shape, np.float32) for name in model_config["source_names"]}
@@ -162,6 +179,13 @@ def predict_track(model_config, sess, mix_audio, mix_sr, sep_input_shape, sep_ou
         mix_part = np.expand_dims(mix_part, axis=0)
 
         source_parts = sess.run(separator_sources, feed_dict={mix_context: mix_part})
+        if model_config["semi_supervised"]:
+            source_parts = [source_parts]
+            count = 0
+            for i in range(3-1):
+                for j, name in enumerate(model_config["source_names"]):
+                    count = i if i==0 else (i-1)*model_config["num_sources"]+1+j
+                    source_parts.append(sess.run(separator_sources, feed_dict={mix_context:source_parts[count][name]}))
 
         # Save predictions
         # source_shape = [1, freq_bins, acc_mag_part.shape[2], num_chan]
@@ -173,7 +197,13 @@ def predict_track(model_config, sess, mix_audio, mix_sr, sep_input_shape, sep_ou
             else:
                 source_parts = source_parts
         
-        if model_config["evaluate_subnet"] and model_config["sub_num_layers"] == None:
+        if model_config["semi_supervised"]:
+            for i in range(3):
+                for j, name in enumerate(model_config["source_names"]):
+                    count = i if i==0 else (i-1)*model_config["num_sources"]+1+j
+                    source_preds[i][name][source_pos:source_pos + output_time_frames] = source_parts[count][name][0, :, :]
+
+        elif model_config["evaluate_subnet"] and model_config["sub_num_layers"] == None:
             assert(model_config["deep_supervised"])
             for index in range(model_config["min_sub_num_layers"], model_config["num_layers"] + 1):
                 for name in model_config["source_names"]:
@@ -188,7 +218,11 @@ def predict_track(model_config, sess, mix_audio, mix_sr, sep_input_shape, sep_ou
 
     # In case we had to pad the mixture at the end, remove those samples from 
     # source prediction now
-    if model_config["evaluate_subnet"] and model_config["sub_num_layers"] == None:
+    if model_config["semi_supervised"]:
+        if extra_pad > 0:
+            for index in range(3):
+                source_preds[index] = {name : source_preds[index][name][:-extra_pad,:] for name in list(source_preds[index].keys())}
+    elif model_config["evaluate_subnet"] and model_config["sub_num_layers"] == None:
         if extra_pad > 0:
             for index in range(0, model_config["num_layers"]-model_config["min_sub_num_layers"] + 1):
                 source_preds[index] = {name : source_preds[index][name][:-extra_pad,:] for name in list(source_preds[index].keys())}

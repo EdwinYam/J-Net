@@ -226,12 +226,14 @@ def optimise(model_config, experiment_id, model_path=None):
     epoch = 0
     best_loss = 10000
     best_model_path = None
-    batch_size_list = [16,32]
-    lr_list = [1e-4,1e-5]
+    batch_size_list = [16,32,32,32]
+    lr_list = [1e-4,1e-5,1e-6,1e-7]
     for i in range(len(lr_list)):
         worse_epochs = 0
         if i>=1:
             print("Finished first round of training, now entering fine-tuning stage")
+            if i==3:
+                model_config["worse_epochs"] = 5
         model_config["batch_size"] = batch_size_list[i]
         model_config["init_sup_sep_lr"] = lr_list[i]
         
@@ -275,10 +277,17 @@ def run(cfg):
     
     model_path = None
     #model_path = "checkpoints/unet-10_RNGlayer_False-107243/107243-28000"
+    #sup_model_path = "checkpoints/unet-10_RNGlayer_True-888127/888127-100"
     sup_model_path, sup_loss = optimise(model_path=model_path)
     print("Supervised training finished! Saved model at " + sup_model_path + ". Performance: " + str(sup_loss))
     print("Model Configuration: {}".format(model_config))
  
+    #sup_model_path = "checkpoints/unet-10_RNGlayer_True-220100/220100-136000"
+    #sup_model_path = "checkpoints/unet-10_RNGlayer_True-936856/936856-160000"
+    #sup_model_path = "checkpoints/unet-10_RNGlayer_True-782953/782953-194000"
+    #sup_model_path = "checkpoints/unet-10_RNGlayer_True-955878/955878-132000"
+    #sup_model_path = "checkpoints/unet-10_RNGlayer_True-912913/912913-136000"
+    #sup_model_path = "checkpoints/unet-10_RNGlayer_True-88946/88946-206000"
     # Evaluate trained model on MUSDB
     # TODO
     print(model_config["estimates_path"])
