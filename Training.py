@@ -93,6 +93,7 @@ def train(model_config, experiment_id, load_model=None):
                                                        reuse=True)
         
     # Supervised objective: MSE for raw audio, MAE for magnitude space (Jansson U-Net)
+    total_loss = 0.0
     separator_loss = 0.0
     recover_loss = 0.0
     semi_loss = 0.0
@@ -118,9 +119,9 @@ def train(model_config, experiment_id, load_model=None):
             else:
                 separator_loss += tf.reduce_mean(tf.abs(real_mag - sep_source[key])) 
                 if model_config["random_recovery"]:
-                    recover_loss += 0.75*tf.reduce_mean(tf.abs(real_source - recover_sources[key][key]))
+                    recover_loss += tf.reduce_mean(tf.abs(real_source - recover_sources[key][key]))
                 if model_config["semi_supervised"]:
-                    semi_loss += 0.75*tf.reduce_mean(tf.abs(real_source - re_separator_sources[key][key]))
+                    semi_loss += tf.reduce_mean(tf.abs(real_source - re_separator_sources[key][key]))
         else:
             sub_separator_loss = 0.0
             if model_config["deep_supervised"]:
@@ -130,11 +131,19 @@ def train(model_config, experiment_id, load_model=None):
             else:
                 separator_loss += tf.reduce_mean(tf.square(real_source - sep_source[key]))
                 if model_config["random_recovery"]:
-                    recover_loss += 0.75*tf.reduce_mean(tf.square(real_source - recover_sources[key][key]))
+                    recover_loss += tf.reduce_mean(tf.square(real_source - recover_sources[key][key]))
                 if model_config["semi_supervised"]:
-                    semi_loss += 0.75*tf.reduce_mean(tf.square(real_source - re_separator_sources[key][key]))
+                    semi_loss += tf.reduce_mean(tf.square(real_source - re_separator_sources[key][key]))
     # Normalise by number of sources 
     separator_loss = separator_loss / float(model_config["num_sources"]) 
+    recover_loss = recover_loss / float(model_config["num_sources"])
+    semi_loss = semi_loss / float(model_config["num_sources"])
+    if model_config["adjust_loss_ratio"]:
+        semi_ratio = 0.5
+        recover_ratio = 0.9
+        total_loss = separator_loss + recover_ratio*recover_loss + semi_ratio*semi_loss
+    else:
+        total_loss = separator_loss + recover_loss + semi_loss
 
     # TRAINING CONTROL VARIABLES
     global_step = tf.get_variable('global_step', [], 
@@ -173,7 +182,7 @@ def train(model_config, experiment_id, load_model=None):
     update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
     with tf.control_dependencies(update_ops):
         with tf.variable_scope("separator_solver"):
-            separator_solver = tf.train.AdamOptimizer(learning_rate=model_config["init_sup_sep_lr"]).minimize(separator_loss, var_list=separator_vars)
+            separator_solver = tf.train.AdamOptimizer(learning_rate=model_config["init_sup_sep_lr"]).minimize(total_loss, var_list=separator_vars)
 
     # SUMMARIES
     tf.summary.scalar("sep_loss", separator_loss, collections=["sup"])
