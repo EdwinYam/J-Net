@@ -145,9 +145,13 @@ def train(model_config, experiment_id, load_model=None):
 
     # Set up optimizers
     separator_vars = Utils.getTrainableVariables("separator")
+    g_vars = tf.global_variables()
     t_vars = tf.trainable_variables()
-    for var in t_vars:
-        print("    [Trainable] {}".format(var.name))
+    for var in g_vars:
+        if var in t_vars:
+            print("    [Trainable] {}".format(var.name))
+        else:
+            print("    [UNTrainable] {}".format(var.name))
     #separator_vars = list()
     #for var in t_vars:
     #    if "downsample" in var.name and int(var.name.split('/')[-2].split('_')[-1]) not in model_config["random_downsample_layer"]:

@@ -187,8 +187,7 @@ class UnetAudioSeparator:
                                              self.filter_size,
                                              activation=LeakyReLU,
                                              padding=self.padding, 
-                                             name='downsample_conv_{}'.format(self.num_layers),
-                                             trainable=not(self.add_random_layer and self.random_downsample_layer[i])) # One more conv here since we need to compute features after last decimation
+                                             name='downsample_conv_{}'.format(self.num_layers)) # One more conv here since we need to compute features after last decimation
 
 
             # Feature map here shall be X along one dimension
@@ -228,20 +227,20 @@ class UnetAudioSeparator:
                 if self.add_multires_block:
                     curr_layer = current_layer
                     _current_layer = tf.layers.conv1d(curr_layer, 
-                                                      2*(self.num_initial_filters + (self.num_increase_filters * i)), 
+                                                      2*(self.num_initial_filters + (self.num_increase_filters * (self.num_layers - i - 1))), 
                                                       1, 
                                                       strides=1, 
                                                       activation=LeakyReLU, 
                                                       padding='same', 
-                                                      name='downsample_multires_conv_{}'.format(i)) # out = in - filter + 1
+                                                      name='upsample_multires_conv_{}'.format(i)) # out = in - filter + 1
                     for j in range(2-1):
                         curr_layer = tf.layers.conv1d(curr_layer, 
-                                                      self.num_initial_filters + (self.num_increase_filters * i), 
+                                                      self.num_initial_filters + (self.num_increase_filters * (self.num_layers - i - 1)), 
                                                       self.merge_filter_size, 
                                                       strides=1, 
                                                       activation=LeakyReLU, 
                                                       padding='same', 
-                                                      name='downsample_multires_{}_conv_{}'.format(j,i)) # out = in - filter + 1            
+                                                      name='upsample_multires_{}_conv_{}'.format(j,i)) # out = in - filter + 1            
                         current_layer = Utils.crop_and_concat(current_layer, curr_layer, match_feature_dim=False)
                     current_layer = current_layer + _current_layer
 
