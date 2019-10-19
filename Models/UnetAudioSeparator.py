@@ -50,6 +50,7 @@ class UnetAudioSeparator:
         self.use_meanvar = model_config["use_meanvar"]
         self.add_multires_block = model_config["add_multires_block"]
         self.add_res_path = model_config["add_res_path"]
+        self.random_res_path = model_config["random_res_path"]
         self.skip_layer = model_config["skip_layer"]
         # self.residual = model_config["residual"]
         self.residual = False
@@ -163,14 +164,16 @@ class UnetAudioSeparator:
                                                     strides=1,
                                                     activation=LeakyReLU,
                                                     padding='same',
-                                                    name='downsample_res_{}_conv_{}'.format(j,i))
+                                                    name='downsample_res_{}_conv_{}'.format(j,i),
+                                                    trainable=not self.random_res_path)
                         sub_res_path = tf.layers.conv1d(res_path,
                                                         self.num_initial_filters + (self.num_increase_filters * i),
                                                         1,
                                                         strides=1,
                                                         activation=LeakyReLU,
                                                         padding='same',
-                                                        name='downsample_sub_res_{}_conv_{}'.format(j,i))
+                                                        name='downsample_sub_res_{}_conv_{}'.format(j,i),
+                                                        trainable=not self.random_res_path)
                         res_path = res_path + sub_res_path
                     enc_outputs.append(res_path)
                 else:
@@ -205,6 +208,7 @@ class UnetAudioSeparator:
 
                 # assert(enc_outputs[-i-1].get_shape().as_list()[1] == current_layer.get_shape().as_list()[1] or self.context) #No cropping should be necessary unless we are using context
                 if self.num_layers-i-1 in self.skip_layer:
+                    print("    [SKIP connection] enc_outputs shape: {}".format(current_layer.get_shape().as_list()))
                     current_layer = Utils.crop_and_concat(enc_outputs[-i-1], current_layer, match_feature_dim=False)
                 elif (self.num_layers-i < self.max_skip_num_layers and self.num_layers-i > self.min_skip_num_layers) and self.add_random_layer:
                     current_layer = Utils.crop_and_concat(enc_outputs[-i-1], current_layer, match_feature_dim=False)

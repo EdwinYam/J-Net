@@ -292,7 +292,7 @@ def run(cfg):
     
     model_path = None
     #model_path = "checkpoints/unet-10_RNGlayer_False-107243/107243-28000"
-    #sup_model_path = "checkpoints/unet-10_RNGlayer_True-888127/888127-100"
+    #model_path = "checkpoints/unet-10_RNGlayer_False-229490/229490-90000"
     sup_model_path, sup_loss = optimise(model_path=model_path)
     print("Supervised training finished! Saved model at " + sup_model_path + ". Performance: " + str(sup_loss))
     print("Model Configuration: {}".format(model_config))

@@ -1,0 +1,17 @@
+# SISEC MUS 2018 Configuration
+
+# Define the Input sources for each track
+sources:
+    accompaniment: accompaniment.wav
+# Additionally provide the artistic mix
+mixture:
+    accompaniment.wav
+
+stem_ids:
+    mixture: 0
+    accompaniment: 1
+
+# Define output targets to be tested using linear mixtures
+targets:
+    accompaniment:
+        accompaniment: 1

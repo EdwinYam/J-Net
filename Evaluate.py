@@ -233,7 +233,7 @@ def predict_track(model_config, sess, mix_audio, mix_sr, sep_input_shape, sep_ou
     # source_preds: either a list or only one instance
     return source_preds
 
-def produce_musdb_source_estimates(model_config, load_model, musdb_path, output_path, subsets='test'):
+def produce_musdb_source_estimates(model_config, load_model, musdb_path, output_path, subsets='test', yaml_path=None):
     '''
     Predicts source estimates for MUSDB for a given model checkpoint and configuration, and evaluate them.
     :param model_config: Model configuration of the model to be evaluated
@@ -242,7 +242,7 @@ def produce_musdb_source_estimates(model_config, load_model, musdb_path, output_
     '''
     print("Evaluating trained model saved at " + str(load_model)+ " on MUSDB and saving source estimate audio to " + str(output_path))
 
-    mus = musdb.DB(root_dir=musdb_path)
+    mus = musdb.DB(root_dir=musdb_path, setup_file=yaml_path)
     predict_fun = lambda track : predict(track, model_config, load_model, output_path)
     assert(mus.test(predict_fun))
     mus.run(predict_fun, estimates_dir=output_path, subsets=subsets)
