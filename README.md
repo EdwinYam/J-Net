@@ -1,2 +1,2 @@
-# Web-Unet
-Web Unet is aimed for audio separation or denoising.
+# J-Net
+J-Net is aimed for audio separation.
