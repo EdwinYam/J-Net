@@ -2,10 +2,12 @@ from sacred import Experiment
 from sacred import SETTINGS
 from Config import config_ingredient
 from functools import partial
+from tqdm import tqdm
 import tensorflow as tf
 import numpy as np
 import os
 import random
+import time
 
 import Datasets
 import Utils
@@ -213,13 +215,10 @@ def train(model_config, experiment_id, load_model=None):
     # Start training loop
     _global_step = sess.run(global_step)
     _init_step = _global_step
-    for _ in range(model_config["epoch_it"]):
+    for _ in tqdm(range(model_config["epoch_it"])):
         # TRAIN SEPARATOR
         _, _sup_summaries = sess.run([separator_solver, sup_summaries])
         writer.add_summary(_sup_summaries, global_step=_global_step)
-        if _global_step % 100 == 0:
-            print('    [{}] Current step: {}'.format(model_config["network"], _global_step))
-
         # Increment step counter, check if maximum iterations per epoch is 
         # achieved and stop in that case
         _global_step = sess.run(increment_global_step)
@@ -293,7 +292,13 @@ def run(cfg):
     model_path = None
     #model_path = "checkpoints/unet-10_RNGlayer_False-107243/107243-28000"
     #model_path = "checkpoints/unet-10_RNGlayer_False-229490/229490-90000"
+    #model_path = "checkpoints/unet-10_RNGlayer_True-545210/545210-14000"
+
+    start_time = time.time()
     sup_model_path, sup_loss = optimise(model_path=model_path)
+    training_time = time.time() - start_time
+    time.strftime("%H:%M:%S", time.gmtime(training_time))
+
     print("Supervised training finished! Saved model at " + sup_model_path + ". Performance: " + str(sup_loss))
     print("Model Configuration: {}".format(model_config))
  
@@ -302,9 +307,23 @@ def run(cfg):
     #sup_model_path = "checkpoints/unet-10_RNGlayer_True-782953/782953-194000"
     #sup_model_path = "checkpoints/unet-10_RNGlayer_True-955878/955878-132000"
     #sup_model_path = "checkpoints/unet-10_RNGlayer_True-912913/912913-136000"
-    #sup_model_path = "checkpoints/unet-10_RNGlayer_True-88946/88946-206000"
+    #sup_model_path = "checkpoints/unet-10_RNGlayer_False-610268/610268-136000" 
+    #sup_model_path = "checkpoints/unet-10_RNGlayer_False-64831/64831-162000"
+    #sup_model_path = "checkpoints/unet-10_RNGlayer_True-134822/134822-288000"
+    #sup_model_path = "checkpoints/unet-10_RNGlayer_True-191141/191141-194000"
+    #sup_model_path = "checkpoints/unet-10_RNGlayer_False-745916/745916-198000"
+
+    #sup_model_path = "checkpoints/unet-10_RNGlayer_True-191141/191141-194000"
+    #sup_model_path = "checkpoints/unet-10_RNGlayer_False-745916/745916-198000"
+    #sup_model_path = "checkpoints/unet-10_RNGlayer_True-930010/930010-246000"
+    #sup_model_path = "checkpoints/unet-10_RNGlayer_True-191141/191141-194000"
+    
     # Evaluate trained model on MUSDB
     # TODO
     print(model_config["estimates_path"])
+    start_time = time.time()
     Evaluate.produce_musdb_source_estimates(model_config, sup_model_path, model_config["musdb_path"], model_config["estimates_path"])
+    testing_time = time.time() - start_time
     print("Model Configuration: {}".format(model_config))
+    time.strftime("%H:%M:%S", time.gmtime(testing_time))
+    time.strftime("%H:%M:%S", time.gmtime(training_time))

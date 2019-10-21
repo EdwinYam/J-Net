@@ -3,7 +3,6 @@
 # Define the Input sources for each track
 sources:
     vocals: vocals.wav
-
 # Additionally provide the artistic mix
 mixture:
     vocals.wav
@@ -15,4 +14,6 @@ stem_ids:
 # Define output targets to be tested using linear mixtures
 targets:
     vocals:
+        vocals: 1
+    accompaniment:
         vocals: 1

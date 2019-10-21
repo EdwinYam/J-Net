@@ -13,5 +13,7 @@ stem_ids:
 
 # Define output targets to be tested using linear mixtures
 targets:
+    vocals:
+        accompaniment: 1
     accompaniment:
         accompaniment: 1
