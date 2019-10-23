@@ -157,7 +157,7 @@ class UnetAudioSeparator:
 
                 if self.add_res_path and (i in self.skip_layer):
                     res_path = current_layer
-                    for j in range(2):
+                    for j in range(3):
                         res_path = tf.layers.conv1d(res_path,
                                                     self.num_initial_filters + (self.num_increase_filters * i),
                                                     self.filter_size,

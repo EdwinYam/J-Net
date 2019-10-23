@@ -295,12 +295,11 @@ def run(cfg):
     #model_path = "checkpoints/unet-10_RNGlayer_True-545210/545210-14000"
 
     start_time = time.time()
-    sup_model_path, sup_loss = optimise(model_path=model_path)
+    #sup_model_path, sup_loss = optimise(model_path=model_path)
     training_time = time.time() - start_time
-    time.strftime("%H:%M:%S", time.gmtime(training_time))
 
-    print("Supervised training finished! Saved model at " + sup_model_path + ". Performance: " + str(sup_loss))
-    print("Model Configuration: {}".format(model_config))
+    #print("Supervised training finished! Saved model at " + sup_model_path + ". Performance: " + str(sup_loss))
+    #print("Model Configuration: {}".format(model_config))
  
     #sup_model_path = "checkpoints/unet-10_RNGlayer_True-220100/220100-136000"
     #sup_model_path = "checkpoints/unet-10_RNGlayer_True-936856/936856-160000"
@@ -317,7 +316,9 @@ def run(cfg):
     #sup_model_path = "checkpoints/unet-10_RNGlayer_False-745916/745916-198000"
     #sup_model_path = "checkpoints/unet-10_RNGlayer_True-930010/930010-246000"
     #sup_model_path = "checkpoints/unet-10_RNGlayer_True-191141/191141-194000"
-    
+ 
+    sup_model_path = "checkpoints/unet-10_RNGlayer_False-956477/956477-146000"
+    model_config["semi_supervised"] = True
     # Evaluate trained model on MUSDB
     # TODO
     print(model_config["estimates_path"])
@@ -325,5 +326,7 @@ def run(cfg):
     Evaluate.produce_musdb_source_estimates(model_config, sup_model_path, model_config["musdb_path"], model_config["estimates_path"])
     testing_time = time.time() - start_time
     print("Model Configuration: {}".format(model_config))
-    time.strftime("%H:%M:%S", time.gmtime(testing_time))
-    time.strftime("%H:%M:%S", time.gmtime(training_time))
+    
+    print('-'*20)
+    print("Train time: {}".format(training_time))
+    print("Test time: {}".format(testing_time))
