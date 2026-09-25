@@ -1,14 +1,14 @@
 import tensorflow as tf
-from tensorflow.contrib.signal import hann_window
 import numpy as np
 import os
+import functools
 
 import Datasets
+import Utils
 import Models.UnetSpectrogramSeparator
 import Models.UnetAudioSeparator
 import Models.NestedUnetSpectrogramSeparator
 import Models.NestedUnetAudioSeparator
-import functools
 
 def test(model_config, partition, model_folder, load_model):
     # Determine input and output shapes
@@ -27,87 +27,67 @@ def test(model_config, partition, model_folder, load_model):
         raise NotImplementedError
 
     sep_input_shape, sep_output_shape = separator_class.get_padding(np.array(disc_input_shape))
-    separator_func = separator_class.get_output
+    assert ((sep_input_shape[1] - sep_output_shape[1]) % 2 == 0)
+
+    # Build model by running dummy forward pass
+    dummy_input = tf.zeros(sep_input_shape, dtype=tf.float32)
+    _ = separator_class(dummy_input, training=False, return_spectrogram=not model_config["raw_audio_loss"])
+
+    if load_model is not None:
+        Utils.load_model_checkpoint(separator_class, load_model)
+
+    log_path = os.path.join(model_config["log_dir"], model_folder)
+    os.makedirs(log_path, exist_ok=True)
+    writer = tf.summary.create_file_writer(log_path)
 
     # Creating the batch generators
-    assert ((sep_input_shape[1] - sep_output_shape[1]) % 2 == 0)
     dataset = Datasets.get_dataset(model_config, 
                                    sep_input_shape, 
                                    sep_output_shape, 
                                    partition=partition)
-    iterator = dataset.make_one_shot_iterator()
-    batch = iterator.get_next()
 
     print("Testing...")
 
-    # BUILD MODELS
-    # Separator
-    separator_sources = separator_func(batch["mix"], False, 
-                                       not model_config["raw_audio_loss"], 
-                                       reuse=False)  
-    # Sources are output in order [acc, voice] for voice separation, 
-    # [bass, drums, other, vocals] for multi-instrument separation
-
-    global_step = tf.get_variable('global_step', [], 
-                                  initializer=tf.constant_initializer(0), 
-                                  trainable=False, 
-                                  dtype=tf.int64)
-
-    # Start session and queue input threads
-    sess = tf.Session()
-    sess.run(tf.global_variables_initializer())
-    writer = tf.summary.FileWriter(os.path.join(model_config["log_dir"], model_folder), graph=sess.graph)
-
-    # CHECKPOINTING
-    # Load pretrained model to test
-    restorer = tf.train.Saver(tf.global_variables(), write_version=tf.train.SaverDef.V2)
-    print("Num of variables: " + str(len(tf.global_variables())))
-    restorer.restore(sess, load_model)
-    print('Pre-trained model restored for testing')
-
-    # Start training loop
-    _global_step = sess.run(global_step)
-    print("Starting!")
-
     total_loss = 0.0
-    batch_num = 1
+    batch_num = 0
 
-    # Supervised objective: MSE for raw audio, MAE for magnitude space (Jansson U-Net)
-    separator_loss = 0
-    for key in model_config["source_names"]:
-        real_source = batch[key]
-        # sep_source = separator_sources[-1][key]
-        sep_source = separator_sources[-1][key] if model_config["deep_supervised"] else separator_sources[key]
+    for batch in dataset:
+        separator_sources = separator_class(
+            batch["mix"],
+            training=False,
+            return_spectrogram=not model_config["raw_audio_loss"]
+        )
 
-        if model_config["network"] == "unet_spectrogram" and not model_config["raw_audio_loss"]:
-            window = functools.partial(hann_window, periodic=True)
-            stfts = tf.contrib.signal.stft(tf.squeeze(real_source, 2), frame_length=1024, frame_step=768,
-                                           fft_length=1024, window_fn=window)
-            real_mag = tf.abs(stfts)
-            assert(separator_loss <= 0.0)
-            separator_loss += tf.reduce_mean(tf.abs(real_mag - sep_source))
-        else:
-            separator_loss += tf.reduce_mean(tf.square(real_source - sep_source))
-    # separator_loss = separator_loss / float(model_config["num_sources"])  # Normalise by number of sources
+        batch_loss = 0.0
+        for key in model_config["source_names"]:
+            real_source = batch[key]
+            sep_source = separator_sources[-1][key] if model_config["deep_supervised"] else separator_sources[key]
 
-    while True:
-        try:
-            curr_loss = sess.run(separator_loss)
-            total_loss = total_loss + curr_loss
-            batch_num += 1
-        except tf.errors.OutOfRangeError as e:
-            break
+            if model_config["network"] in ("unet_spectrogram", "unet++_spectrogram") and not model_config["raw_audio_loss"]:
+                window = functools.partial(tf.signal.hann_window, periodic=True)
+                stfts = tf.signal.stft(
+                    tf.squeeze(real_source, 2),
+                    frame_length=1024,
+                    frame_step=768,
+                    fft_length=1024,
+                    window_fn=window
+                )
+                real_mag = tf.abs(stfts)
+                batch_loss += tf.reduce_mean(tf.abs(real_mag - sep_source))
+            else:
+                batch_loss += tf.reduce_mean(tf.square(real_source - sep_source))
 
-    summary = tf.Summary(value=[tf.Summary.Value(tag="test_loss", simple_value=total_loss)])
-    writer.add_summary(summary, global_step=_global_step)
+        batch_loss = batch_loss / float(model_config["num_sources"])
+        total_loss += float(batch_loss.numpy())
+        batch_num += 1
+
+    mean_loss = total_loss / float(max(batch_num, 1))
+
+    with writer.as_default():
+        tf.summary.scalar("test_loss", mean_loss, step=0)
 
     writer.flush()
     writer.close()
 
-    print("Finished testing - Mean MSE: " + str(total_loss))
-
-    # Close session, clear computational graph
-    sess.close()
-    tf.reset_default_graph()
-
-    return total_loss
+    print("Finished testing - Mean MSE: " + str(mean_loss))
+    return mean_loss

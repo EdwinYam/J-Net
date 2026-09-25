@@ -50,7 +50,7 @@ def write_records(sample_list, model_config, input_shape, output_shape, records_
 
     # Set up writers
     num_writers = 1
-    writers = [tf.python_io.TFRecordWriter(records_path + str(i) + ".tfrecords") for i in range(num_writers)]
+    writers = [tf.io.TFRecordWriter(records_path + str(i) + ".tfrecords") for i in range(num_writers)]
 
     recovery_sample_dict = dict()
     if model_config["recovery_augmented"]:
@@ -250,7 +250,7 @@ def get_dataset(model_config, input_shape, output_shape, partition):
         dataset = dataset.repeat()
         dataset = dataset.shuffle(buffer_size=model_config["cache_size"])
 
-    dataset = dataset.apply(tf.contrib.data.batch_and_drop_remainder(model_config["batch_size"]))
+    dataset = dataset.batch(model_config["batch_size"], drop_remainder=True)
     dataset = dataset.prefetch(1)
 
     return dataset

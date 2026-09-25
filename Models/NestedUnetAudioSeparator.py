@@ -11,7 +11,7 @@ tf.variable_scope = tf.compat.v1.variable_scope
 tf.image.resize_bilinear = tf.compat.v1.image.resize_bilinear
 
 
-class NestedUnetAudioSeparator:
+class NestedUnetAudioSeparator(tf.keras.Model):
     '''
     U-Net separator network for audio separation or speech enhancement.
     Uses valid convolutions, so it predicts for the centre part of the input - 
@@ -19,7 +19,7 @@ class NestedUnetAudioSeparator:
     function)
     '''
 
-    def __init__(self, model_config):
+    def __init__(self, model_config, **kwargs):
         '''
         Initialize U-net
         :param num_layers: Number of down- and upscaling layers in the network 
@@ -29,6 +29,7 @@ class NestedUnetAudioSeparator:
         :param deep_supervised: Detemine whether to supervise over outputs of 
                                 all nested Unet
         '''
+        super().__init__(**kwargs)
         self.num_layers = model_config["num_layers"]
         self.num_initial_filters = model_config["num_initial_filters"] # 24
         self.num_increase_filters = model_config["num_increase_filters"]
@@ -46,6 +47,120 @@ class NestedUnetAudioSeparator:
         self.output_activation = model_config["output_activation"] # tf.tanh
         self.deep_supervised = model_config["deep_supervised"]
 
+        if self.output_activation == "tanh":
+            self.out_activation_fn = tf.tanh
+        elif self.output_activation == "linear":
+            self.out_activation_fn = None
+        else:
+            raise NotImplementedError
+
+        # Down-convolutions
+        self.down_convs = []
+        for i in range(self.num_layers):
+            filter_num = self.num_initial_filters + self.num_increase_filters * i
+            self.down_convs.append(
+                tf.keras.layers.Conv1D(
+                    filter_num,
+                    self.filter_size,
+                    strides=1,
+                    activation=LeakyReLU,
+                    padding=self.padding,
+                    name=f"downconv_{i}"
+                )
+            )
+
+        filter_num = self.num_initial_filters + self.num_increase_filters * (self.num_layers - 1)
+        self.bottleneck_conv = tf.keras.layers.Conv1D(
+            filter_num,
+            self.filter_size,
+            activation=LeakyReLU,
+            padding=self.padding,
+            name=f"downconv_{self.num_layers}"
+        )
+
+        # Nested upconvs and interpolation layers
+        self.up_conv_dict = {}
+        self.up_interp_dict = {}
+        for i in range(self.num_layers):
+            for j in range(1, self.num_layers + 1 - i):
+                key = f"{i}_{j}"
+                if j != self.num_layers:
+                    f_num = self.num_initial_filters + self.num_increase_filters * (j - 1)
+                    self.up_conv_dict[key] = tf.keras.layers.Conv1D(
+                        f_num,
+                        self.merge_filter_size,
+                        activation=LeakyReLU,
+                        padding=self.padding,
+                        name=f"upconv_{key}"
+                    )
+                if self.upsampling == 'learned':
+                    self.up_interp_dict[key] = Models.InterpolationLayer.LearnedInterpolationLayer(
+                        padding=self.padding,
+                        level=key,
+                        name=f"interp_{key}"
+                    )
+
+        # Final output convs for nested stages
+        self.final_convs = {}
+        for i in range(1, self.num_layers + 1):
+            if not self.deep_supervised and i != self.num_layers:
+                continue
+            self.final_convs[str(i)] = tf.keras.layers.Conv1D(
+                self.num_initial_filters + self.num_increase_filters * (self.num_layers - 1),
+                self.merge_filter_size,
+                activation=LeakyReLU,
+                padding=self.padding,
+                name=f"final_conv_{i}"
+            )
+
+        # Output layers
+        if self.output_type == "direct":
+            if self.deep_supervised:
+                self.out_layers = [
+                    Models.OutputLayer.IndependentOutputLayer(
+                        self.source_names,
+                        self.num_channels,
+                        self.output_filter_size,
+                        self.padding,
+                        self.out_activation_fn,
+                        name=f"out_layer_{i}"
+                    )
+                    for i in range(self.num_layers)
+                ]
+            else:
+                self.out_layers = Models.OutputLayer.IndependentOutputLayer(
+                    self.source_names,
+                    self.num_channels,
+                    self.output_filter_size,
+                    self.padding,
+                    self.out_activation_fn,
+                    name="out_layer"
+                )
+        elif self.output_type == "difference":
+            if self.deep_supervised:
+                self.out_layers = [
+                    Models.OutputLayer.DifferenceOutputLayer(
+                        self.source_names,
+                        self.num_channels,
+                        self.output_filter_size,
+                        self.padding,
+                        self.out_activation_fn,
+                        name=f"out_layer_{i}"
+                    )
+                    for i in range(self.num_layers)
+                ]
+            else:
+                self.out_layers = Models.OutputLayer.DifferenceOutputLayer(
+                    self.source_names,
+                    self.num_channels,
+                    self.output_filter_size,
+                    self.padding,
+                    self.out_activation_fn,
+                    name="out_layer"
+                )
+        else:
+            raise NotImplementedError
+
     def get_padding(self, shape):
         '''
         Calculates the required amounts of padding along each axis of the input 
@@ -57,238 +172,152 @@ class NestedUnetAudioSeparator:
         '''
 
         if self.context:
-            # Check if desired shape is possible as output shape - go from 
-            # output shape towards lowest-res feature map
-            rem = float(shape[1]) # Cut off batch size number and channel
-
-            # Output filter size
+            rem = float(shape[1])
             rem = rem + self.output_filter_size - 1
 
-            # Upsampling blocks
             for i in range(self.num_layers):
                 rem = rem + self.merge_filter_size - 1
-                rem = (rem + 1.) / 2. # out = in + in - 1 <=> in = (out+1) / 2
+                rem = (rem + 1.) / 2.
 
-            # Round resulting feature map dimensions up to nearest integer
-            x = np.asarray(np.ceil(rem),dtype=np.int64)
+            x = np.asarray(np.ceil(rem), dtype=np.int64)
             assert(x >= 2)
 
-            # Compute input and output shapes based on lowest-res feature map
             output_shape = x
             input_shape = x
-
-            # Extra conv
             input_shape = input_shape + self.filter_size - 1
 
-            # Go from centre feature map through up- and downsampling blocks
             for i in range(self.num_layers):
-                output_shape = 2*output_shape - 1 # Upsampling
-                output_shape = output_shape - self.merge_filter_size + 1 # Conv
+                output_shape = 2*output_shape - 1
+                output_shape = output_shape - self.merge_filter_size + 1
 
-                input_shape = 2*input_shape - 1 # Decimation
+                input_shape = 2*input_shape - 1
                 if i < self.num_layers - 1:
-                    input_shape = input_shape + self.filter_size - 1 # Conv
+                    input_shape = input_shape + self.filter_size - 1
                 else:
                     input_shape = input_shape + self.input_filter_size - 1
 
-            # Output filters
             output_shape = output_shape - self.output_filter_size + 1
 
             input_shape = np.asarray([shape[0], input_shape, self.num_channels])
             output_shape = np.asarray([shape[0], output_shape, self.num_channels])
-            # input_shape = np.concatenate([[shape[0]], [input_shape], [self.num_channels]])
-            # output_shape = np.concatenate([[shape[0]], [output_shape], [self.num_channels]])
             return input_shape, output_shape
         else:
             input_shape = np.asarray([shape[0], shape[1], self.num_channels])
             output_shape = input_shape
             return input_shape, output_shape
 
-    def get_output(self, input, training, return_spectrogram=False, reuse=True):
+    def call(self, inputs, training=False, return_spectrogram=False):
         '''
-        Creates symbolic computation graph of the U-Net for a given input batch
-        :param input: Input batch of mixtures, 3D tensor 
-                      [batch_size, num_samples, num_channels]
-        :param reuse: Whether to create new parameter variables or reuse existing ones
-        :return: U-Net output: List of source estimates. Each item is a 3D tensor 
-                               [batch_size, num_out_samples, num_channels]
+        Forward pass of Nested U-Net (Wave-U-Net++ / J-Net)
+        :param inputs: Input batch of mixtures, 3D tensor [batch_size, num_samples, num_channels]
+        :return: If deep_supervised: list of dicts. Otherwise: dict of source estimates.
         '''
-        with tf.variable_scope("separator", reuse=reuse):
-            enc_outputs = list()
-            current_layer = input
+        enc_outputs = list()
+        current_layer = inputs
 
-            # Down-convolution: Repeat strided conv
-            for i in range(self.num_layers):
-                filter_num = self.num_initial_filters + self.num_increase_filters * i 
-                current_layer = tf.layers.conv1d(current_layer, 
-                                                 filter_num, 
-                                                 self.filter_size, 
-                                                 strides=1, 
-                                                 activation=LeakyReLU, 
-                                                 padding=self.padding,
-                                                 name='downconv_{}'.format(i)) # out = in - filter + 1
-
-                enc_outputs.append(current_layer)
-                current_layer = current_layer[:,::2,:] 
-                # Decimate by factor of 2 
-                # out = (in-1)/2 + 1
-
-            filter_num = self.num_initial_filters + self.num_increase_filters * (self.num_layers-1)
-            current_layer = tf.layers.conv1d(current_layer, 
-                                             filter_num,
-                                             self.filter_size,
-                                             activation=LeakyReLU,
-                                             padding=self.padding,
-                                             name='downconv_{}'.format(self.num_layers)) 
-            # One more conv here since we need to compute features after last 
-            # decimation
+        # Down-convolution
+        for i in range(self.num_layers):
+            current_layer = self.down_convs[i](current_layer)
             enc_outputs.append(current_layer)
-            assert(len(enc_outputs) == self.num_layers + 1)
-            current_layer_up = current_layer
+            current_layer = current_layer[:, ::2, :]
 
-            # Feature map here shall be X along one dimension
-            all_enc_outputs = list()
-            all_enc_outputs.append(enc_outputs)
-            # Upconvolution
-            for i in range(self.num_layers):
-                # Store the output of sub upsampling network, and there are
-                # (self.num_layers) sub networks in WaveUnet++ 
-                sub_enc_outputs = list()
-                for j in range(1, self.num_layers + 1 - i):
-                    # The first stored encoded output is not used but passed to
-                    # final conv layer for final output
-                    current_layer_up = all_enc_outputs[i][j]
-                    if j != self.num_layers:
-                        # Deepest encoded output needs upsampling only, no need
-                        # to be passed to any conv layer
-                        # Other encoded output needs to be crop_and_concat"ed"
-                        # and be passed to conv layer
-                        for k in range(i):
-                            assert(enc_outputs[j].get_shape().as_list()[1] == all_enc_outputs[k+1][j].get_shape().as_list()[1] or self.context)
-                            #No cropping should be necessary unless we are using context
-                            current_layer_up = Utils.crop_and_concat(all_enc_outputs[k+1][j],
-                                                                     current_layer_up,
-                                                                     match_feature_dim=False)
-                        
-                        filter_num = self.num_initial_filters + self.num_increase_filters * (j-1)
-                        current_layer_up = tf.layers.conv1d(current_layer_up, 
-                                                            filter_num,
-                                                            self.merge_filter_size,
-                                                            activation=LeakyReLU,
-                                                            padding=self.padding,
-                                                            name='upconv_{}_{}'.format(i,j))
-                    
-                    #UPSAMPLING
-                    current_layer_up = tf.expand_dims(current_layer_up, axis=1)
-                    if self.upsampling == 'learned':
-                        # Learned interpolation between two neighbouring time positions 
-                        # by using a convolution filter of width 2, and inserting the 
-                        # responses in the middle of the two respective inputs
-                        current_layer_up = Models.InterpolationLayer.learned_interpolation_layer(current_layer_up, self.padding, '{}_{}'.format(i,j))
+        current_layer = self.bottleneck_conv(current_layer)
+        enc_outputs.append(current_layer)
+        assert(len(enc_outputs) == self.num_layers + 1)
+
+        all_enc_outputs = list()
+        all_enc_outputs.append(enc_outputs)
+
+        # Upconvolution
+        for i in range(self.num_layers):
+            sub_enc_outputs = list()
+            for j in range(1, self.num_layers + 1 - i):
+                key = f"{i}_{j}"
+                current_layer_up = all_enc_outputs[i][j]
+                if j != self.num_layers:
+                    for k in range(i):
+                        current_layer_up = Utils.crop_and_concat(
+                            all_enc_outputs[k+1][j],
+                            current_layer_up,
+                            match_feature_dim=False
+                        )
+                    current_layer_up = self.up_conv_dict[key](current_layer_up)
+
+                # UPSAMPLING
+                current_layer_up = tf.expand_dims(current_layer_up, axis=1)
+                if self.upsampling == 'learned':
+                    current_layer_up = self.up_interp_dict[key](current_layer_up)
+                else:
+                    width = current_layer_up.shape[2]
+                    if self.context:
+                        current_shape = [1, width * 2 - 1]
+                        current_layer_up = tf.compat.v1.image.resize_bilinear(
+                            current_layer_up,
+                            current_shape,
+                            align_corners=True
+                        )
                     else:
-                        if self.context:
-                            current_shape = [1, current_layer_up.get_shape().as_list()[2]*2 - 1]
-                            current_layer_up = tf.image.resize_bilinear(current_layer_up, 
-                                                                        current_shape,
-                                                                        align_corners=True)
-                        else:
-                            current_shape = [1, current_layer_up.get_shape().as_list()[2]*2]
-                            current_layer_up = tf.image.resize_bilinear(current_layer_up, 
-                                                                        current_shape) # out = in + in - 1
- 
-                    current_layer_up = tf.squeeze(current_layer_up, axis=1)
-                    sub_enc_outputs.append(current_layer_up)
-                    # UPSAMPLING FINISHED
+                        current_shape = [1, width * 2]
+                        current_layer_up = tf.compat.v1.image.resize_bilinear(
+                            current_layer_up,
+                            current_shape
+                        )
+                current_layer_up = tf.squeeze(current_layer_up, axis=1)
+                sub_enc_outputs.append(current_layer_up)
 
-                all_enc_outputs.append(sub_enc_outputs)
+            all_enc_outputs.append(sub_enc_outputs)
 
-            for m in range(len(all_enc_outputs)):
-                for n in range(len(all_enc_outputs[m])):
-                    print('   [unet++] {}_{}: {}'.format(m, n, all_enc_outputs[m][n].get_shape().as_list()))
+        # Reconnect/concatenate the most shallow layer together to form the input of last conv
+        final_outputs = list()
+        for i in range(1, self.num_layers + 1):
+            if not self.deep_supervised and i != self.num_layers:
+                continue
+            current_layer = all_enc_outputs[i][0]
 
-            # Reconnect/concatenate the most swallow layer together to form the 
-            # input of last conv
-            final_outputs = list()
-            for i in range(1,self.num_layers+1):
-                if (not self.deep_supervised and i != self.num_layers):
-                     continue
-                current_layer = all_enc_outputs[i][0]
+            for j in range(i):
+                current_layer = Utils.crop_and_concat(
+                    all_enc_outputs[j][0],
+                    current_layer,
+                    match_feature_dim=False
+                )
 
-                for j in range(i):
-                    current_layer = Utils.crop_and_concat(all_enc_outputs[j][0], 
-                                                          current_layer, 
-                                                          match_feature_dim=False)
+            current_layer = self.final_convs[str(i)](current_layer)
+            final_outputs.append(current_layer)
 
-                current_layer = tf.layers.conv1d(current_layer,
-                                                 self.num_initial_filters+self.num_increase_filters*(self.num_layers-1),
-                                                 self.merge_filter_size,
-                                                 activation=LeakyReLU,
-                                                 padding=self.padding) 
-                                                 # out = in - filter + 1
-                
-                # The final_output which pass less conv layers tends to be 
-                # longer, thus, we need to crop those output (or not need to
-                # crop?)
-                # TODO
-                final_outputs.append(current_layer)
-            
-            for i in range(self.num_layers - 1):
-                if not self.deep_supervised:
-                    continue
-                assert(final_outputs[i].get_shape().as_list()[1] > final_outputs[-1].get_shape().as_list()[1] or not self.context)
-                print('    [unet++] {}th subnet final output shape: {}'.format(i+1, final_outputs[i].get_shape().as_list()))
-                final_outputs[i] = Utils.crop(final_outputs[i],
-                                              final_outputs[-1].get_shape().as_list(),
-                                              match_feature_dim=False)
-            print('    [unet++] Final output shape: {}'.format(final_outputs[-1]))
+        for i in range(self.num_layers - 1):
+            if not self.deep_supervised:
+                continue
+            final_outputs[i] = Utils.crop(
+                final_outputs[i],
+                final_outputs[-1].shape.as_list(),
+                match_feature_dim=False
+            )
 
-            # Output layer
-            # Determine output activation function
-            # (tf.tanh) seem to be better than (linear)
-            if self.output_activation == "tanh":
-                out_activation = tf.tanh
-            elif self.output_activation == "linear":
-                out_activation = lambda x: Utils.AudioClip(x, training)
+        if self.output_type == "direct":
+            if self.deep_supervised:
+                return [self.out_layers[i](final_outputs[i]) for i in range(self.num_layers)]
             else:
-                raise NotImplementedError
-
-            if self.output_type == "direct":
-                if self.deep_supervised:
-                    return [Models.OutputLayer.independent_outputs(final_outputs[i],
-                                                                   self.source_names,
-                                                                   self.num_channels, 
-                                                                   self.output_filter_size,
-                                                                   self.padding, 
-                                                                   out_activation) for i in range(self.num_layers)]
-                else:
-                    return Models.OutputLayer.independent_outputs(final_outputs[-1],
-                                                                  self.source_names,
-                                                                  self.num_channels,
-                                                                  self.output_filter_size,
-                                                                  self.padding,
-                                                                  out_activation)
-            elif self.output_type == "difference":
-                cropped_input = Utils.crop(input,
-                                           final_outputs[-1].get_shape().as_list(), 
-                                           match_feature_dim=False)
-                if self.deep_supervised:
-                    cropped_inputs = [cropped_input] * self.num_layers
-                    return [Models.OutputLayer.difference_output(cropped_inputs[i], 
-                                                                 final_outputs[i], 
-                                                                 self.source_names, 
-                                                                 self.num_channels, 
-                                                                 self.output_filter_size, 
-                                                                 self.padding, 
-                                                                 out_activation, 
-                                                                 training) for i in range(self.num_layers)]
-                else:
-                    return Models.OutputLayer.difference_output(cropped_input,
-                                                                final_outputs[-1],
-                                                                self.source_names,
-                                                                self.num_channels,
-                                                                self.output_filter_size,
-                                                                self.padding,
-                                                                out_activation,
-                                                                training)
+                return self.out_layers(final_outputs[-1])
+        elif self.output_type == "difference":
+            cropped_input = Utils.crop(
+                inputs,
+                final_outputs[-1].shape.as_list(),
+                match_feature_dim=False
+            )
+            if self.deep_supervised:
+                cropped_inputs = [cropped_input] * self.num_layers
+                return [
+                    self.out_layers[i](cropped_inputs[i], final_outputs[i], training=training)
+                    for i in range(self.num_layers)
+                ]
             else:
-                raise NotImplementedError
+                return self.out_layers(cropped_input, final_outputs[-1], training=training)
+        else:
+            raise NotImplementedError
+
+    def get_output(self, input, training=False, return_spectrogram=False, reuse=True):
+        '''
+        Backward-compatible wrapper for TF1 graph calls
+        '''
+        return self(input, training=training, return_spectrogram=return_spectrogram)
+
